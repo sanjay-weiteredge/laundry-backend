@@ -15,9 +15,9 @@
   },
   "production": {
     "username": "postgres",
-    "password": "Aryan",
-    "database": "Chatbot",
-    "host": "13.61.177.105",
+    "password": "Laundry@123",
+    "database": "Laundry",
+    "host": "13.51.13.251",
     "dialect": "postgres"
   }
 } 
