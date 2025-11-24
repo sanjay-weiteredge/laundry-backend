@@ -13,17 +13,15 @@ const sendOTP = async (req, res) => {
         message: 'Phone number is required'
       });
     }
-
-    // Static OTP for now
-    const otp = "0000";
-
+    
+    // Return static OTP for all users
     res.json({
       success: true,
-      message: "OTP sent successfully",
-      phone_number,
-      otp
+      message: 'OTP sent successfully',
+      otp: '0000',
+      phone_number: phone_number
     });
-
+    
   } catch (error) {
     console.error('Error sending OTP:', error);
     res.status(500).json({
@@ -35,34 +33,59 @@ const sendOTP = async (req, res) => {
 };
 
 
-
 const verifyOTP = async (req, res) => {
   try {
     const { phone_number, otp } = req.body;
-
+    
     if (!phone_number || !otp) {
       return res.status(400).json({
         success: false,
         message: 'Phone number and OTP are required'
       });
     }
-
-    // Static OTP check
-    if (otp !== "0000") {
+    
+    // Check if the provided OTP matches the static OTP
+    if (otp !== '0000') {
       return res.status(400).json({
         success: false,
-        message: "Invalid OTP"
+        message: 'Invalid OTP'
       });
     }
-
+    
+    // Find or create user
+    let user = await User.findOne({ where: { phone_number } });
+    const isNewUser = !user;
+    
+    if (isNewUser) {
+      user = await User.create({
+        phone_number: phone_number,
+        created_at: new Date(),
+        updated_at: new Date()
+      });
+    }
+    
+    // Generate token
+    const token = require('../utils/jwt').generateToken({ 
+      id: user.id, 
+      phone_number: user.phone_number 
+    });
+    
+    // Return success response
     res.json({
       success: true,
-      message: "OTP verified successfully",
-      phone_number
+      message: isNewUser ? 'User registered successfully' : 'Login successful',
+      token,
+      user: {
+        id: user.id,
+        phone_number: user.phone_number,
+        name: user.name,
+        email: user.email
+      },
+      isNewUser
     });
-
+    
   } catch (error) {
-    console.error('Error verifying OTP:', error);
+    console.error('Error in verifyOTP:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to verify OTP',
@@ -70,7 +93,6 @@ const verifyOTP = async (req, res) => {
     });
   }
 };
-
 
 const getUserProfile = async (req, res) => {
   console.log("Fetching authenticated user profile");
