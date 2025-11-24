@@ -39,22 +39,28 @@ const sendOTP = async (req, res) => {
 const verifyOTP = async (req, res) => {
   try {
     const { phone_number, otp } = req.body;
-    
+
     if (!phone_number || !otp) {
       return res.status(400).json({
         success: false,
         message: 'Phone number and OTP are required'
       });
     }
-    
-    const result = await AuthService.verifyOTP(phone_number, otp);
-    
-    if (!result.success) {
-      return res.status(400).json(result);
+
+    // Static OTP check
+    if (otp !== "0000") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid OTP"
+      });
     }
-    
-    res.json(result);
-    
+
+    res.json({
+      success: true,
+      message: "OTP verified successfully",
+      phone_number
+    });
+
   } catch (error) {
     console.error('Error verifying OTP:', error);
     res.status(500).json({
@@ -64,6 +70,7 @@ const verifyOTP = async (req, res) => {
     });
   }
 };
+
 
 const getUserProfile = async (req, res) => {
   console.log("Fetching authenticated user profile");
