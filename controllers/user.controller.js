@@ -13,14 +13,17 @@ const sendOTP = async (req, res) => {
         message: 'Phone number is required'
       });
     }
-    
-    const result = await AuthService.generateOTP(phone_number);
-    
+
+    // Static OTP for now
+    const otp = "0000";
+
     res.json({
-      ...result,
-      otp: result.otp 
+      success: true,
+      message: "OTP sent successfully",
+      phone_number,
+      otp
     });
-    
+
   } catch (error) {
     console.error('Error sending OTP:', error);
     res.status(500).json({
@@ -30,6 +33,7 @@ const sendOTP = async (req, res) => {
     });
   }
 };
+
 
 
 const verifyOTP = async (req, res) => {
