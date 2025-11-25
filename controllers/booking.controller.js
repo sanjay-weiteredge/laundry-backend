@@ -1,6 +1,6 @@
 const { Op, Sequelize } = require('sequelize');
 const { sequelize } = require('../models');
-const { Order, Service, Store, User, Address, ServicePricing } = require('../models');
+const { Order, Service, Store, User, Address, ServicePricing, OrderItem } = require('../models');
 const { getDistance } = require('geolib');
 
 const bookingController = {
@@ -107,19 +107,29 @@ const bookingController = {
   
   bookService: async (req, res) => {
     const transaction = await sequelize.transaction();
-    console.log("bookService",req.body)
+    console.log("bookService", req.body);
     
     try {
-      const { serviceId, slotStart, slotEnd, addressId, notes } = req.body;
+      const { services, slotStart, slotEnd, addressId, notes } = req.body;
       const userId = req.user.id;
 
-      
-      if (!serviceId || !slotStart || !slotEnd || !addressId) {
+     
+      if (!Array.isArray(services) || services.length === 0 || !slotStart || !slotEnd || !addressId) {
         await transaction.rollback();
         return res.status(400).json({
           success: false,
-          message: 'serviceId, slotStart, slotEnd, and addressId are required'
+          message: 'services array, slotStart, slotEnd, and addressId are required'
         });
+      }
+
+      for (const service of services) {
+        if (!service.id || !service.quantity || service.quantity < 1) {
+          await transaction.rollback();
+          return res.status(400).json({
+            success: false,
+            message: 'Each service must have an id and a quantity of at least 1'
+          });
+        }
       }
 
       
@@ -176,51 +186,101 @@ const bookingController = {
         });
       }
 
-      
+     
       const nearestStore = stores[0];
-
-      
       const storeDistance = nearestStore.dataValues.distance;
       
       console.log('Nearest store data:', nearestStore.dataValues);
       console.log('Store distance value:', storeDistance);
-      console.log('Store distance type:', typeof storeDistance);
 
-      console.log('Creating order with nearest store:', nearestStore.dataValues);
-
+      
+      console.log('Creating order with services:', JSON.stringify(services, null, 2));
+      console.log('Assigning to store:', nearestStore.name, '(ID:', nearestStore.id, ')');
+      
+      // Create the order with the first service ID (temporary workaround)
       const order = await Order.create({
         user_id: userId,
         store_id: nearestStore.id,
-        service_id: serviceId,
         address_id: addressId,
+        service_id: services[0].id, 
         pickup_scheduled_at: new Date(slotStart),
         pickup_slot_end: new Date(slotEnd),
         order_status: 'pending',
-        total_amount: 0, 
-        weight: 1.0, 
-        created_at: new Date()
+        payment_mode: 'cash',
+        notes: notes || null
       }, { transaction });
 
-     
-      console.log(`New order ${order.id} created for store ${nearestStore.id}`);
+      console.log('Order created with ID:', order.id);
+      
+      // Store all services as order items
+      for (const service of services) {
+        console.log(`Processing service ID: ${service.id}, Quantity: ${service.quantity}`);
+        
+        const serviceExists = await Service.findByPk(service.id, { transaction });
+        if (!serviceExists) {
+          console.error(`Service with id ${service.id} not found`);
+          await transaction.rollback();
+          return res.status(404).json({
+            success: false,
+            message: `Service with id ${service.id} not found`
+          });
+        }
 
+        // Create order item for each service
+        const orderItem = await OrderItem.create({
+          order_id: order.id,
+          service_id: service.id,
+          quantity: service.quantity
+        }, { transaction });
+        
+        console.log(`Created order item for service ${service.id} with quantity ${service.quantity}`);
+      }
+
+      // Commit the transaction
       await transaction.commit();
+      console.log('Order successfully booked with ID:', order.id);
+      
+      // Log store assignment
+      console.log(`Order assigned to store: ${nearestStore.name} (ID: ${nearestStore.id})`);
+      console.log('Store location:', {
+        latitude: nearestStore.latitude,
+        longitude: nearestStore.longitude,
+        distance: nearestStore.dataValues.distance ? nearestStore.dataValues.distance.toFixed(2) + ' km' : 'N/A'
+      });
+      
+      
+      const orderWithDetails = await Order.findByPk(order.id, {
+        attributes: ['id', 'order_status', 'pickup_scheduled_at', 'pickup_slot_end', 'created_at', 'notes'],
+        include: [
+          {
+            model: OrderItem,
+            as: 'items',
+            attributes: ['id', 'quantity'],
+            include: [{
+              model: Service,
+              as: 'service',
+              attributes: ['id', 'name', 'description']
+            }]
+          },
+          {
+            model: Store,
+            as: 'store',
+            attributes: ['id', 'name', 'phone', 'address', 'latitude', 'longitude']
+          },
+          {
+            model: Address,
+            as: 'delivery_address',
+            attributes: ['id', 'address_line', 'city', 'state', 'pincode', 'landmark']
+          }
+          
+
+        ]
+      });
       
       res.status(201).json({
         success: true,
-        message: 'Service booked successfully',
-        data: {
-          orderId: order.id,
-          store: {
-            id: nearestStore.id,
-            name: nearestStore.name,
-            distance: storeDistance ? storeDistance.toFixed(2) + ' km' : 'Unknown'
-          },
-          pickupSlot: {
-            start: slotStart,
-            end: slotEnd
-          }
-        }
+        message: 'Order placed successfully',
+        data: orderWithDetails
       });
 
     } catch (error) {
@@ -236,25 +296,43 @@ const bookingController = {
     }
   },
 
-  
   getOrderDetails: async (req, res) => {
     try {
       const { orderId } = req.params;
       const userId = req.user.id;
 
       const order = await Order.findOne({
-        where: { id: orderId, user_id: userId },
+        where: {
+          id: orderId,
+          user_id: userId
+        },
         include: [
-          { model: Service, attributes: ['id', 'name'] },
-          { model: Store, attributes: ['id', 'name', 'phone'] },
-          { model: Address, attributes: ['id', 'address_line1', 'landmark', 'city', 'state', 'pincode'] }
+          {
+            model: OrderItem,
+            as: 'items',
+            include: [{
+              model: Service,
+              as: 'service',
+              attributes: ['id', 'name', 'description']
+            }]
+          },
+          {
+            model: Store,
+            as: 'store',
+            attributes: ['id', 'name', 'phone', 'address', 'latitude', 'longitude']
+          },
+          {
+            model: Address,
+            as: 'delivery_address',
+            attributes: ['id', 'address_line', 'city', 'state', 'pincode', 'landmark', 'latitude', 'longitude']
+          }
         ]
       });
 
       if (!order) {
         return res.status(404).json({
           success: false,
-          message: 'Order not found'
+          message: 'Order not found or you do not have permission to view this order'
         });
       }
 
@@ -267,148 +345,6 @@ const bookingController = {
       res.status(500).json({
         success: false,
         message: 'Error fetching order details',
-        error: error.message
-      });
-    }
-  },
-
-
-
-  getVendorOrders: async (req, res) => {
-    try {
-      const { status } = req.query;
-      const storeId = req.store.id;
-
-      if (!storeId) {
-        return res.status(403).json({
-          success: false,
-          message: 'Vendor authentication required'
-        });
-      }
-
-      const whereClause = { store_id: storeId };
-      if (status) {
-        whereClause.status = status;
-      }
-
-      const orders = await Order.findAll({
-        where: whereClause,
-        include: [
-          { 
-            model: Service, 
-            attributes: ['id', 'name'],
-            include: [{
-              model: ServicePricing,
-              as: 'pricings',
-              attributes: ['id', 'item_name', 'price', 'unit']
-            }]
-          },
-          { 
-            model: User, 
-            attributes: ['id', 'name', 'phone'],
-            include: [{
-              model: Address,
-              as: 'addresses',
-              where: { id: Sequelize.col('Order.address_id') },
-              required: false
-            }]
-          }
-        ],
-        order: [['created_at', 'DESC']]
-      });
-
-      res.json({
-        success: true,
-        data: orders
-      });
-    } catch (error) {
-      console.error('Error fetching vendor orders:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Error fetching orders',
-        error: error.message
-      });
-    }
-  },
-
- 
-  updateOrderStatus: async (req, res) => {
-    const transaction = await sequelize.transaction();
-    
-    try {
-      const { orderId } = req.params;
-      const { status, notes } = req.body;
-      const storeId = req.store.id;
-
-      // Validate status
-      const validStatuses = ['pending', 'accepted', 'picked_up', 'processing', 'ready_for_delivery', 'completed', 'cancelled'];
-      if (!validStatuses.includes(status)) {
-        await transaction.rollback();
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid status provided'
-        });
-      }
-
-      // Find the order
-      const order = await Order.findOne({
-        where: { id: orderId, store_id: storeId },
-        include: [
-          { model: User, attributes: ['id', 'fcm_token'] },
-          { model: Service, attributes: ['name'] }
-        ],
-        transaction
-      });
-
-      if (!order) {
-        await transaction.rollback();
-        return res.status(404).json({
-          success: false,
-          message: 'Order not found or not authorized'
-        });
-      }
-
-      // Update order status
-      const previousStatus = order.status;
-      order.status = status;
-      if (notes) order.notes = notes;
-      await order.save({ transaction });
-
-      // Send notification to user
-      if (order.User && order.User.fcm_token) {
-        try {
-          // This is a placeholder - implement your actual notification logic
-          console.log(`Sending notification to user ${order.User.id} about order ${orderId} status change: ${status}`);
-          // sendPushNotification({
-          //   to: order.User.fcm_token,
-          //   title: 'Order Update',
-          //   body: `Your order for ${order.Service.name} is now ${status.replace('_', ' ')}`,
-          //   data: { orderId, status }
-          // });
-        } catch (notifError) {
-          console.error('Error sending notification:', notifError);
-          // Don't fail the request if notification fails
-        }
-      }
-
-      await transaction.commit();
-      
-      res.json({
-        success: true,
-        message: 'Order status updated successfully',
-        data: {
-          orderId: order.id,
-          previousStatus,
-          newStatus: status
-        }
-      });
-
-    } catch (error) {
-      await transaction.rollback();
-      console.error('Error updating order status:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Error updating order status',
         error: error.message
       });
     }

@@ -1,5 +1,6 @@
 const db = require('../models');
-const { Order, User, Service, Store } = db;
+const { Order, User, Service, Store, OrderItem, Address } = db;
+const { Op } = require('sequelize');
 
 const orderController = {
   getAllOrders: async (req, res) => {
@@ -7,14 +8,23 @@ const orderController = {
       const orders = await Order.findAll({
         include: [
           {
-            model: Service,
-            as: 'service',
-            attributes: ['id', 'name']
+            model: OrderItem,
+            as: 'items',
+            include: [{
+              model: Service,
+              as: 'service',
+              attributes: ['id', 'name', 'description']
+            }]
           },
           {
             model: Store,
             as: 'store',
-            attributes: ['id', 'name']
+            attributes: ['id', 'name', 'phone', 'address']
+          },
+          {
+            model: Address,
+            as: 'delivery_address',
+            attributes: ['id', 'address_line', 'city', 'state', 'pincode', 'landmark']
           }
         ],
         order: [['created_at', 'DESC']]
@@ -34,72 +44,106 @@ const orderController = {
     }
   },
 
-  getUserOrders: async (req, res) => {
-    try {
-      const userId = req.user.id;
-      
-      const orders = await Order.findAll({
-        where: {
-          user_id: userId
-        },
-        include: [
-          {
+getUserOrders: async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const orders = await Order.findAll({
+      where: {
+        user_id: userId
+      },
+      include: [
+        {
+          model: OrderItem,
+          as: 'items',
+          include: [{
             model: Service,
             as: 'service',
-            attributes: ['id', 'name']
-          },
-          {
-            model: Store,
-            as: 'store',
-            attributes: ['id', 'name']
-          }
-        ],
-        attributes: [
-          'id',
-          'order_status',
-          'created_at',
-          'updated_at',
-          'pickup_scheduled_at',
-          'pickup_slot_end',
-          'picked_up_at',
-          'delivered_at'
-        ],
-        order: [['created_at', 'DESC']]
-      });
+            attributes: ['id', 'name', 'description']
+          }]
+        },
+        {
+          model: Store,
+          as: 'store',
+          attributes: ['id', 'name', 'phone', 'address']
+        },
+        {
+          model: Address,
+          as: 'delivery_address',
+          attributes: ['id', 'address_line', 'city', 'state', 'pincode', 'landmark']
+        }
+      ],
+      attributes: [
+        'id',
+        'order_status',
+        'created_at',
+        'updated_at',
+        'pickup_scheduled_at',
+        'pickup_slot_end',
+        'picked_up_at',
+        'delivered_at'
+      ],
+      order: [['created_at', 'DESC']]
+    });
 
-      const formattedOrders = orders.map(order => ({
+    const formattedOrders = orders.map(order => {
+      // Extract services with quantities
+      const services = order.items.map(item => ({
+        id: item.service.id,
+        name: item.service.name,
+        description: item.service.description,
+        quantity: item.quantity,
+        price: item.price // Add this if you have price per item
+      }));
+
+      // Calculate total items
+      const totalItems = order.items.reduce((sum, item) => sum + item.quantity, 0);
+
+      return {
         orderId: order.id,
         status: order.order_status,
-        serviceName: order.service ? order.service.name : 'Unknown',
+        services: services,
+        totalItems: totalItems,
         storeName: order.store ? order.store.name : 'Unknown',
         storeId: order.store ? order.store.id : null,
+        storePhone: order.store ? order.store.phone : null,
+        deliveryAddress: order.delivery_address ? {
+          addressLine: order.delivery_address.address_line,
+          city: order.delivery_address.city,
+          state: order.delivery_address.state,
+          pincode: order.delivery_address.pincode,
+          landmark: order.delivery_address.landmark
+        } : null,
         createdAt: order.created_at,
-        completedAt: order.order_status === 'delivered' ? order.delivered_at : null,
+        updatedAt: order.updated_at,
         pickupSlot: {
           start: order.pickup_scheduled_at,
           end: order.pickup_slot_end
         },
         pickupScheduledAt: order.pickup_scheduled_at,
-        pickedUpAt: order.picked_up_at
-      }));
+        pickedUpAt: order.picked_up_at,
+        deliveredAt: order.delivered_at
+      };
+    });
 
-      res.json({
-        success: true,
-        data: formattedOrders
-      });
+    res.json({
+      success: true,
+      data: formattedOrders
+    });
 
-    } catch (error) {
-      console.error('Error fetching user orders:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to fetch orders',
-        error: error.message
-      });
-    }
-  },
+  } catch (error) {
+    console.error('Error fetching user orders:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch orders',
+      error: error.message
+    });
+  }
+},
 
 
   cancelOrder: async (req, res) => {
+    const transaction = await db.sequelize.transaction();
     try {
       const { orderId } = req.params;
       const userId = req.user.id;
@@ -108,10 +152,12 @@ const orderController = {
         where: { 
           id: orderId,
           user_id: userId
-        }
+        },
+        transaction
       });
 
       if (!order) {
+        await transaction.rollback();
         return res.status(404).json({
           success: false,
           message: 'Order not found'
@@ -120,6 +166,7 @@ const orderController = {
 
       // Check if order can be cancelled (only pending or confirmed orders)
       if (!['pending', 'confirmed'].includes(order.order_status)) {
+        await transaction.rollback();
         return res.status(400).json({
           success: false,
           message: 'Order cannot be cancelled at this stage'
@@ -129,19 +176,34 @@ const orderController = {
       // Update order status to cancelled
       await order.update({
         order_status: 'cancelled',
+        cancelled_at: new Date(),
         updated_at: new Date()
+      }, { transaction });
+
+      await transaction.commit();
+
+      // Get updated order with details
+      const updatedOrder = await Order.findByPk(orderId, {
+        include: [
+          {
+            model: OrderItem,
+            as: 'items',
+            include: [{
+              model: Service,
+              as: 'service'
+            }]
+          }
+        ]
       });
 
       res.json({
         success: true,
         message: 'Order cancelled successfully',
-        data: {
-          orderId: order.id,
-          status: order.order_status
-        }
+        data: updatedOrder
       });
 
     } catch (error) {
+      await transaction.rollback();
       console.error('Error cancelling order:', error);
       res.status(500).json({
         success: false,
@@ -218,16 +280,18 @@ const orderController = {
   },
 
   updateOrderStatus: async (req, res) => {
+    const transaction = await db.sequelize.transaction();
     try {
       const { orderId } = req.params;
-      const { status } = req.body;
+      const { status, notes } = req.body;
       const vendorId = req.user.id;
 
       const validStatuses = ['pending', 'cancelled', 'confirmed', 'picked_up', 'processing', 'ready_for_delivery', 'out_for_delivery', 'delivered'];
       if (!validStatuses.includes(status)) {
+        await transaction.rollback();
         return res.status(400).json({
           success: false,
-          message: 'Invalid status. Valid statuses: pending, cancelled, confirmed, picked_up, processing, ready_for_delivery, out_for_delivery, delivered'
+          message: 'Invalid status. Valid statuses: ' + validStatuses.join(', ')
         });
       }
 
@@ -238,8 +302,17 @@ const orderController = {
             model: Store,
             as: 'store',
             attributes: ['id', 'admin_id']
+          },
+          {
+            model: OrderItem,
+            as: 'items',
+            include: [{
+              model: Service,
+              as: 'service'
+            }]
           }
-        ]
+        ],
+        transaction
       });
 
       if (!order) {
@@ -250,35 +323,72 @@ const orderController = {
       }
 
       if (order.store && order.store.admin_id !== vendorId) {
+        await transaction.rollback();
         return res.status(403).json({
           success: false,
           message: 'You are not authorized to update this order'
         });
       }
 
-      const updateData = { order_status: status };
+      const updateData = { 
+        order_status: status,
+        updated_at: new Date()
+      };
       
-      if (status === 'cancelled') {
-        updateData.cancelled_at = new Date();
-      } else if (status === 'picked_up') {
-        updateData.picked_up_at = new Date();
-      } else if (status === 'delivered') {
-        updateData.delivered_at = new Date();
+      // Set timestamps based on status
+      const statusTimestamps = {
+        'cancelled': 'cancelled_at',
+        'picked_up': 'picked_up_at',
+        'processing': 'processing_at',
+        'ready_for_delivery': 'ready_for_delivery_at',
+        'out_for_delivery': 'out_for_delivery_at',
+        'delivered': 'delivered_at'
+      };
+
+      if (statusTimestamps[status]) {
+        updateData[statusTimestamps[status]] = new Date();
       }
 
-      await order.update(updateData);
+      // Add admin notes if provided
+      if (notes) {
+        updateData.admin_notes = notes;
+      }
+
+      await order.update(updateData, { transaction });
+      await transaction.commit();
+
+      // Fetch the updated order with all its relationships
+      const updatedOrder = await Order.findByPk(orderId, {
+        include: [
+          {
+            model: OrderItem,
+            as: 'items',
+            include: [{
+              model: Service,
+              as: 'service'
+            }]
+          },
+          {
+            model: Store,
+            as: 'store',
+            attributes: ['id', 'name', 'phone', 'address']
+          },
+          {
+            model: Address,
+            as: 'delivery_address',
+            attributes: ['id', 'address_line', 'city', 'state', 'pincode', 'landmark']
+          }
+        ]
+      });
 
       res.json({
         success: true,
         message: 'Order status updated successfully',
-        data: {
-          orderId: order.id,
-          status: order.order_status,
-          updatedAt: order.updated_at
-        }
+        data: updatedOrder
       });
 
     } catch (error) {
+      await transaction.rollback();
       console.error('Error updating order status:', error);
       res.status(500).json({
         success: false,

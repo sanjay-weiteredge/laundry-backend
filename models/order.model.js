@@ -19,9 +19,9 @@ module.exports = (sequelize, DataTypes) => {
         as: 'delivery_address'
       });
       
-      Order.belongsTo(models.Service, {
-        foreignKey: 'service_id',
-        as: 'service'
+      Order.hasMany(models.OrderItem, {
+        foreignKey: 'order_id',
+        as: 'items'
       });
     }
   }
@@ -56,33 +56,15 @@ module.exports = (sequelize, DataTypes) => {
         key: 'id'
       }
     },
-    service_id: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      references: {
-        model: 'services',
-        key: 'id'
-      }
-    },
-    total_amount: {
-      type: DataTypes.DECIMAL(10, 2),
-      allowNull: false,
-      validate: {
-        min: 0
-      }
-    },
-    weight: {
-      type: DataTypes.DECIMAL(10, 2),
-      allowNull: false,
-      validate: {
-        min: 0.1
-      }
+    notes: {
+      type: DataTypes.TEXT,
+      allowNull: true
     },
     payment_mode: {
       type: DataTypes.STRING(20),
       defaultValue: 'cash',
       validate: {
-        isIn: [['cash']] // Only cash payment supported as per requirements
+        isIn: [['cash']] 
       }
     },
     order_status: {
