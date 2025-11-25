@@ -14,7 +14,7 @@ const sendOTP = async (req, res) => {
       });
     }
     
-    // Return static OTP for all users
+   
     res.json({
       success: true,
       message: 'OTP sent successfully',
