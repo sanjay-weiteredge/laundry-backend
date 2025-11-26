@@ -48,27 +48,33 @@ const bookingController = {
       }
 
       const slots = [];
-      const startHour = 10; 
-      const endHour = 20;   
+      const startHour = 10; // 10 AM IST (4:30 AM UTC)
+      const endHour = 20;   // 8 PM IST (2:30 PM UTC)
       const slotDuration = 2; 
       const now = new Date();
+      
+      // Convert input date to IST (UTC+5:30)
       const selectedDate = new Date(date);
+      const istOffset = 330; // IST is UTC+5:30 (5*60 + 30 = 330 minutes)
+      const istDate = new Date(selectedDate.getTime() + (istOffset * 60 * 1000));
+      
       const isToday = selectedDate.toDateString() === now.toDateString();
 
       const formatTime = (date) => {
         return date.toLocaleTimeString('en-US', { 
           hour: '2-digit', 
           minute: '2-digit',
-          hour12: true 
+          hour12: true,
+          timeZone: 'Asia/Kolkata' // Explicitly set to IST
         });
       };
 
       for (let hour = startHour; hour <= endHour; hour += slotDuration) {
-        const startTime = new Date(selectedDate);
-        startTime.setHours(hour, 0, 0, 0);
+        const startTime = new Date(istDate);
+        startTime.setUTCHours(hour - 5, 30, 0, 0); // Convert to UTC
         
         const endTime = new Date(startTime);
-        endTime.setHours(hour + slotDuration);
+        endTime.setUTCHours(hour - 5 + slotDuration, 30);
 
         if (isToday && endTime <= now) {
           continue;
@@ -199,17 +205,23 @@ const bookingController = {
       console.log('Assigning to store:', nearestStore.name, '(ID:', nearestStore.id, ')');
       
       // Create the order
+      // Convert slot times to UTC before saving
+      const utcStart = new Date(slotStart);
+      const utcEnd = new Date(slotEnd);
+      
       const order = await Order.create({
         user_id: userId,
         store_id: nearestStore.id,
         address_id: addressId,
         service_id: services[0], // Keeping for backward compatibility
-        pickup_scheduled_at: new Date(slotStart),
-        pickup_slot_end: new Date(slotEnd),
+        pickup_scheduled_at: utcStart,
+        pickup_slot_end: utcEnd,
         order_status: 'pending',
         payment_mode: 'cash',
         notes: notes || null
       }, { transaction });
+      
+      console.log('Order times - Start:', utcStart, 'End:', utcEnd);
 
       console.log('Order created with ID:', order.id);
       
@@ -250,7 +262,31 @@ const bookingController = {
       
       
       const orderWithDetails = await Order.findByPk(order.id, {
-        attributes: ['id', 'order_status', 'pickup_scheduled_at', 'pickup_slot_end', 'created_at', 'notes'],
+        attributes: [
+          'id', 
+          'order_status', 
+          'pickup_scheduled_at', 
+          'pickup_slot_end', 
+          'created_at', 
+          'notes',
+          // Convert UTC times back to IST for display
+          [
+            sequelize.fn(
+              'to_char', 
+              sequelize.fn('timezone', 'Asia/Kolkata', sequelize.col('pickup_scheduled_at')), 
+              'YYYY-MM-DD"T"HH24:MI:SS.MSZ'
+            ),
+            'pickup_scheduled_at_ist'
+          ],
+          [
+            sequelize.fn(
+              'to_char', 
+              sequelize.fn('timezone', 'Asia/Kolkata', sequelize.col('pickup_slot_end')), 
+              'YYYY-MM-DD"T"HH24:MI:SS.MSZ'
+            ),
+            'pickup_slot_end_ist'
+          ]
+        ],
         include: [
           {
             model: OrderItem,
