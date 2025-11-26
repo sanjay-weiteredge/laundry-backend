@@ -38,14 +38,6 @@ module.exports = (sequelize, DataTypes) => {
         key: 'id'
       }
     },
-    quantity: {
-      type: DataTypes.INTEGER,
-      allowNull: false,
-      defaultValue: 1,
-      validate: {
-        min: 1
-      }
-    },
     created_at: {
       type: DataTypes.DATE,
       defaultValue: DataTypes.NOW

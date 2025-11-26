@@ -122,12 +122,13 @@ const bookingController = {
         });
       }
 
-      for (const service of services) {
-        if (!service.id || !service.quantity || service.quantity < 1) {
+      // Validate service IDs
+      for (const serviceId of services) {
+        if (!serviceId || typeof serviceId !== 'number' || serviceId < 1) {
           await transaction.rollback();
           return res.status(400).json({
             success: false,
-            message: 'Each service must have an id and a quantity of at least 1'
+            message: 'Each service must have a valid numeric ID'
           });
         }
       }
@@ -197,12 +198,12 @@ const bookingController = {
       console.log('Creating order with services:', JSON.stringify(services, null, 2));
       console.log('Assigning to store:', nearestStore.name, '(ID:', nearestStore.id, ')');
       
-      // Create the order with the first service ID (temporary workaround)
+      // Create the order
       const order = await Order.create({
         user_id: userId,
         store_id: nearestStore.id,
         address_id: addressId,
-        service_id: services[0].id, 
+        service_id: services[0], // Keeping for backward compatibility
         pickup_scheduled_at: new Date(slotStart),
         pickup_slot_end: new Date(slotEnd),
         order_status: 'pending',
@@ -213,27 +214,26 @@ const bookingController = {
       console.log('Order created with ID:', order.id);
       
       // Store all services as order items
-      for (const service of services) {
-        console.log(`Processing service ID: ${service.id}, Quantity: ${service.quantity}`);
+      for (const serviceId of services) {
+        console.log(`Processing service ID: ${serviceId}`);
         
-        const serviceExists = await Service.findByPk(service.id, { transaction });
+        const serviceExists = await Service.findByPk(serviceId, { transaction });
         if (!serviceExists) {
-          console.error(`Service with id ${service.id} not found`);
+          console.error(`Service with id ${serviceId} not found`);
           await transaction.rollback();
           return res.status(404).json({
             success: false,
-            message: `Service with id ${service.id} not found`
+            message: `Service with id ${serviceId} not found` 
           });
         }
 
         // Create order item for each service
         const orderItem = await OrderItem.create({
           order_id: order.id,
-          service_id: service.id,
-          quantity: service.quantity
+          service_id: serviceId
         }, { transaction });
         
-        console.log(`Created order item for service ${service.id} with quantity ${service.quantity}`);
+        console.log(`Created order item for service ${serviceId}`);
       }
 
       // Commit the transaction
@@ -255,7 +255,7 @@ const bookingController = {
           {
             model: OrderItem,
             as: 'items',
-            attributes: ['id', 'quantity'],
+            attributes: ['id'],
             include: [{
               model: Service,
               as: 'service',
