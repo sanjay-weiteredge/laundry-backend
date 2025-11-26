@@ -87,7 +87,7 @@ getUserOrders: async (req, res) => {
     });
 
     const formattedOrders = orders.map(order => {
-      // Extract services with quantities
+      
       const services = order.items.map(item => ({
         id: item.service.id,
         name: item.service.name,
