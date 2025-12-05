@@ -1,25 +1,38 @@
 const multer = require('multer');
 const path = require('path');
-const fs = require('fs');
+const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const multerS3 = require('multer-s3');
 
-
-const uploadDir = path.join(__dirname, '../public/uploads');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
-
-
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadDir);
-  },
-  filename: function (req, file, cb) {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-    cb(null, 'user-' + uniqueSuffix + path.extname(file.originalname));
+// Configure AWS S3 client
+const s3Client = new S3Client({
+  region: process.env.S3_REGION,
+  credentials: {
+    accessKeyId: process.env.S3_ACCESS_KEY ,
+    secretAccessKey: process.env.S3_SECRET_KEY 
   }
 });
 
+const s3Storage = multerS3({
+  s3: s3Client,
+  bucket: process.env.S3_BUCKET_NAME,
+  // Remove ACL and use bucket policies instead
+  metadata: function (req, file, cb) {
+    cb(null, { fieldName: file.fieldname });
+  },
+  key: function (req, file, cb) {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
+    const ext = path.extname(file.originalname).toLowerCase();
+    cb(null, 'users/' + uniqueSuffix + ext);
+  },
+  // Add content type to ensure proper file handling
+  contentType: function (req, file, cb) {
+    cb(null, file.mimetype);
+  },
+  // Add cache control for better performance
+  cacheControl: 'max-age=31536000'
+});
 
+// File filter for allowed types
 const fileFilter = (req, file, cb) => {
   const allowedTypes = ['image/jpeg', 'image/png', 'image/jpg'];
   if (allowedTypes.includes(file.mimetype)) {
@@ -29,8 +42,9 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
+// Configure multer with S3 storage
 const upload = multer({
-  storage: storage,
+  storage: s3Storage,
   fileFilter: fileFilter,
   limits: {
     fileSize: 5 * 1024 * 1024 // 5MB limit
@@ -58,4 +72,31 @@ const uploadImage = (req, res, next) => {
   });
 };
 
-module.exports = uploadImage;
+// Function to delete a file from S3
+const deleteFileFromS3 = async (url) => {
+  if (!url) return;
+  
+  try {
+    // Extract the key from the URL
+    const urlObj = new URL(url);
+    // The key is everything after the bucket name in the path
+    const key = urlObj.pathname.substring(1);
+    
+    const command = new DeleteObjectCommand({
+      Bucket: process.env.S3_BUCKET_NAME || 'thelaundryguyz',
+      Key: key
+    });
+    
+    await s3Client.send(command);
+    console.log(`Successfully deleted ${key} from S3`);
+  } catch (error) {
+    console.error('Error deleting file from S3:', error);
+    // Don't throw error, as we don't want to fail the request if deletion fails
+  }
+};
+
+module.exports = {
+  uploadImage,
+  deleteFileFromS3
+};
+
