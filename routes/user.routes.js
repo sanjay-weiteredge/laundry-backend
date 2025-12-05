@@ -9,7 +9,8 @@ const {
 } = require('../controllers/user.controller');
 const { skipAuth } = require('../middleware/auth.middleware');
 const adminAuth = require('../middleware/admin.middleware');
-const uploadImage = require('../utils/fileUpload');
+const { uploadImage } = require('../utils/fileUpload');
+
 
 router.get('/', adminAuth, listUsers);
 
