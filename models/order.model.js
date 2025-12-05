@@ -19,6 +19,11 @@ module.exports = (sequelize, DataTypes) => {
         as: 'delivery_address'
       });
       
+      Order.belongsTo(models.Service, {
+        foreignKey: 'service_id',
+        as: 'service'
+      });
+      
       Order.hasMany(models.OrderItem, {
         foreignKey: 'order_id',
         as: 'items'
@@ -53,6 +58,14 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: false,
       references: {
         model: 'addresses',
+        key: 'id'
+      }
+    },
+    service_id: {
+      type: DataTypes.INTEGER,
+      allowNull: true,
+      references: {
+        model: 'services',
         key: 'id'
       }
     },
@@ -112,10 +125,8 @@ module.exports = (sequelize, DataTypes) => {
     underscored: true,
     hooks: {
       beforeUpdate: (order) => {
-        // Update the updated_at timestamp whenever the order is modified
         order.updated_at = new Date();
         
-        // Set timestamps for status changes
         if (order.changed('order_status')) {
           const now = new Date();
           switch(order.order_status) {

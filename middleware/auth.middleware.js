@@ -48,7 +48,6 @@ const auth = async (req, res, next) => {
   }
 };
 
-// Store authentication middleware
 const storeAuth = async (req, res, next) => {
   try {
     const token = getTokenFromHeader(req);
@@ -78,10 +77,21 @@ const storeAuth = async (req, res, next) => {
       });
     }
 
-    if (!store.is_active) {
+    const isStatusEndpoint =
+      req.path === '/stores/status' ||
+      req.originalUrl?.includes('/stores/status');
+
+    if (store.is_admin_locked) {
       return res.status(401).json({
         success: false,
-        message: 'Store account is deactivated'
+        message: 'Store has been disabled by admin. Please contact support.'
+      });
+    }
+
+    if (!store.is_active && !isStatusEndpoint) {
+      return res.status(401).json({
+        success: false,
+        message: 'Store account is inactive. Activate the store to continue.'
       });
     }
     

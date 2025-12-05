@@ -119,7 +119,6 @@ const bookingController = {
       const { services, slotStart, slotEnd, addressId, notes } = req.body;
       const userId = req.user.id;
 
-     
       if (!Array.isArray(services) || services.length === 0 || !slotStart || !slotEnd || !addressId) {
         await transaction.rollback();
         return res.status(400).json({
@@ -128,13 +127,31 @@ const bookingController = {
         });
       }
 
-      // Validate service IDs
-      for (const serviceId of services) {
-        if (!serviceId || typeof serviceId !== 'number' || serviceId < 1) {
+      // Normalize payload to [{ serviceId, quantity }]
+      const normalizedServices = services.map((entry) => {
+        if (typeof entry === 'number') {
+          return { serviceId: entry, quantity: 1 };
+        }
+
+        if (entry && typeof entry === 'object') {
+          const id = Number(entry.id ?? entry.service_id ?? entry.serviceId);
+          const quantity = Number(entry.quantity ?? entry.count ?? 1);
+          return {
+            serviceId: id,
+            quantity: Number.isNaN(quantity) || quantity < 1 ? 1 : Math.floor(quantity),
+          };
+        }
+
+        return { serviceId: null, quantity: 1 };
+      });
+
+      // Validate normalized services
+      for (const item of normalizedServices) {
+        if (!item.serviceId || typeof item.serviceId !== 'number' || item.serviceId < 1) {
           await transaction.rollback();
           return res.status(400).json({
             success: false,
-            message: 'Each service must have a valid numeric ID'
+            message: 'Each service must include a valid numeric id',
           });
         }
       }
@@ -204,8 +221,6 @@ const bookingController = {
       console.log('Creating order with services:', JSON.stringify(services, null, 2));
       console.log('Assigning to store:', nearestStore.name, '(ID:', nearestStore.id, ')');
       
-      // Create the order
-      // Convert slot times to UTC before saving
       const utcStart = new Date(slotStart);
       const utcEnd = new Date(slotEnd);
       
@@ -213,7 +228,7 @@ const bookingController = {
         user_id: userId,
         store_id: nearestStore.id,
         address_id: addressId,
-        service_id: services[0], // Keeping for backward compatibility
+        service_id: normalizedServices[0]?.serviceId || null, // Keeping for backward compatibility
         pickup_scheduled_at: utcStart,
         pickup_slot_end: utcEnd,
         order_status: 'pending',
@@ -226,9 +241,9 @@ const bookingController = {
       console.log('Order created with ID:', order.id);
       
       // Store all services as order items
-      for (const serviceId of services) {
-        console.log(`Processing service ID: ${serviceId}`);
-        
+      for (const { serviceId, quantity } of normalizedServices) {
+        console.log(`Processing service ID: ${serviceId} (qty: ${quantity})`);
+
         const serviceExists = await Service.findByPk(serviceId, { transaction });
         if (!serviceExists) {
           console.error(`Service with id ${serviceId} not found`);
@@ -239,10 +254,11 @@ const bookingController = {
           });
         }
 
-        // Create order item for each service
+        // Create / update order items with requested quantity
         const orderItem = await OrderItem.create({
           order_id: order.id,
-          service_id: serviceId
+          service_id: serviceId,
+          quantity
         }, { transaction });
         
         console.log(`Created order item for service ${serviceId}`);
@@ -291,11 +307,11 @@ const bookingController = {
           {
             model: OrderItem,
             as: 'items',
-            attributes: ['id'],
+          attributes: ['id', 'quantity'],
             include: [{
               model: Service,
               as: 'service',
-              attributes: ['id', 'name', 'description']
+            attributes: ['id', 'name', 'description', 'price']
             }]
           },
           {
@@ -346,10 +362,11 @@ const bookingController = {
           {
             model: OrderItem,
             as: 'items',
+          attributes: ['id', 'quantity'],
             include: [{
               model: Service,
               as: 'service',
-              attributes: ['id', 'name', 'description']
+            attributes: ['id', 'name', 'description', 'price']
             }]
           },
           {

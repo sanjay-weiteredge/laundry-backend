@@ -38,7 +38,25 @@ module.exports = (sequelize, DataTypes) => {
         key: 'id'
       }
     },
+    quantity: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      defaultValue: 1,
+      validate: {
+        min: 1
+      }
+    },
+    total_amount: {
+      type: DataTypes.DECIMAL(10, 2),
+      allowNull: true,
+      defaultValue: null,
+      comment: 'Total amount for this line item set by vendor (quantity * unit_price)'
+    },
     created_at: {
+      type: DataTypes.DATE,
+      defaultValue: DataTypes.NOW
+    },
+    updated_at: {
       type: DataTypes.DATE,
       defaultValue: DataTypes.NOW
     }

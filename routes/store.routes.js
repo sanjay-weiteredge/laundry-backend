@@ -12,5 +12,8 @@ router.get('/admin/stores', adminAuth, storeController.getStores);
 
 router.post('/stores/login', storeController.storeLogin);
 router.get('/stores/profile', storeAuth, storeController.getStoreProfile);
+router.patch('/stores/status', storeAuth, storeController.updateStoreStatus);
+router.get('/stores/orders', storeAuth, storeController.getStoreOrders);
+router.put('/stores/orders/:orderId/items', storeAuth, storeController.updateOrderItems);
 
 module.exports = router;

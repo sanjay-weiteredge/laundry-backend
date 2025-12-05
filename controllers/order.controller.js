@@ -10,10 +10,11 @@ const orderController = {
           {
             model: OrderItem,
             as: 'items',
+            attributes: ['id', 'quantity'],
             include: [{
               model: Service,
               as: 'service',
-              attributes: ['id', 'name', 'description']
+              attributes: ['id', 'name', 'description', 'price']
             }]
           },
           {
@@ -56,10 +57,11 @@ getUserOrders: async (req, res) => {
         {
           model: OrderItem,
           as: 'items',
+          attributes: ['id', 'quantity'],
           include: [{
             model: Service,
             as: 'service',
-            attributes: ['id', 'name', 'description']
+            attributes: ['id', 'name', 'description', 'price']
           }]
         },
         {
@@ -88,13 +90,18 @@ getUserOrders: async (req, res) => {
 
     const formattedOrders = orders.map(order => {
       
-      const services = order.items.map(item => ({
-        id: item.service.id,
-        name: item.service.name,
-        description: item.service.description,
-        quantity: item.quantity,
-        price: item.price // Add this if you have price per item
-      }));
+      const services = order.items.map(item => {
+        const service = item.service || {};
+        const unitPrice = service.price ? Number(service.price) : 0;
+        return {
+          id: service.id,
+          name: service.name,
+          description: service.description,
+          quantity: item.quantity,
+          price: unitPrice,
+          lineTotal: unitPrice * (item.quantity || 0)
+        };
+      });
 
       // Calculate total items
       const totalItems = order.items.reduce((sum, item) => sum + item.quantity, 0);
@@ -188,9 +195,11 @@ getUserOrders: async (req, res) => {
           {
             model: OrderItem,
             as: 'items',
+            attributes: ['id', 'quantity'],
             include: [{
               model: Service,
-              as: 'service'
+              as: 'service',
+              attributes: ['id', 'name', 'description', 'price']
             }]
           }
         ]
@@ -284,7 +293,16 @@ getUserOrders: async (req, res) => {
     try {
       const { orderId } = req.params;
       const { status, notes } = req.body;
-      const vendorId = req.user.id;
+      
+      if (!req.store || !req.store.id) {
+        await transaction.rollback();
+        return res.status(401).json({
+          success: false,
+          message: 'Store authentication required'
+        });
+      }
+      
+      const vendorId = req.store.id;
 
       const validStatuses = ['pending', 'cancelled', 'confirmed', 'picked_up', 'processing', 'ready_for_delivery', 'out_for_delivery', 'delivered'];
       if (!validStatuses.includes(status)) {
@@ -306,9 +324,11 @@ getUserOrders: async (req, res) => {
           {
             model: OrderItem,
             as: 'items',
+            attributes: ['id', 'quantity'],
             include: [{
               model: Service,
-              as: 'service'
+              as: 'service',
+              attributes: ['id', 'name', 'description', 'price']
             }]
           }
         ],
@@ -316,13 +336,15 @@ getUserOrders: async (req, res) => {
       });
 
       if (!order) {
+        await transaction.rollback();
         return res.status(404).json({
           success: false,
           message: 'Order not found'
         });
       }
 
-      if (order.store && order.store.admin_id !== vendorId) {
+      // Check if the order belongs to the authenticated store
+      if (!order.store || order.store.id !== vendorId) {
         await transaction.rollback();
         return res.status(403).json({
           success: false,
@@ -361,11 +383,18 @@ getUserOrders: async (req, res) => {
       const updatedOrder = await Order.findByPk(orderId, {
         include: [
           {
+            model: User,
+            as: 'user',
+            attributes: ['id', 'name', 'phone_number', 'email']
+          },
+          {
             model: OrderItem,
             as: 'items',
+            attributes: ['id', 'quantity'],
             include: [{
               model: Service,
-              as: 'service'
+              as: 'service',
+              attributes: ['id', 'name', 'description', 'price']
             }]
           },
           {
