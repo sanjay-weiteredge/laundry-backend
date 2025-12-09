@@ -1,4 +1,4 @@
-const { User, sequelize } = require('../models');
+const { User, Order, OrderItem, Address, sequelize } = require('../models');
 const AuthService = require('../services/auth.service');
 const { Op } = require('sequelize');
 
@@ -55,6 +55,14 @@ const verifyOTP = async (req, res) => {
     // Find or create user
     let user = await User.findOne({ where: { phone_number } });
     const isNewUser = !user;
+
+    // Block login for reported/flagged accounts
+    if (!isNewUser && user.action_button) {
+      return res.status(403).json({
+        success: false,
+        message: 'This account has been reported and cannot log in. Please contact support.'
+      });
+    }
     
     if (isNewUser) {
       user = await User.create({
@@ -261,10 +269,122 @@ const listUsers = async (req, res) => {
   }
 };
 
+const deleteUser = async (req, res) => {
+  const transaction = await sequelize.transaction();
+  try {
+    const { id } = req.params;
+
+    if (!id || Number.isNaN(Number(id))) {
+      await transaction.rollback();
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user id'
+      });
+    }
+
+    const user = await User.findByPk(id, { transaction });
+
+    if (!user) {
+      await transaction.rollback();
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Optional safeguard: prevent deleting admins
+    if (user.role === 'admin') {
+      await transaction.rollback();
+      return res.status(403).json({
+        success: false,
+        message: 'Cannot delete admin accounts'
+      });
+    }
+
+    // Delete order items and orders for this user
+    const orders = await Order.findAll({
+      where: { user_id: id },
+      attributes: ['id'],
+      transaction
+    });
+    const orderIds = orders.map((o) => o.id);
+
+    if (orderIds.length) {
+      await OrderItem.destroy({ where: { order_id: orderIds }, transaction });
+      await Order.destroy({ where: { id: orderIds }, transaction });
+    }
+
+    // Delete addresses for this user
+    await Address.destroy({ where: { user_id: id }, transaction });
+
+    await user.destroy({ transaction });
+    await transaction.commit();
+
+    res.status(200).json({
+      success: true,
+      message: 'User deleted successfully'
+    });
+  } catch (error) {
+    await transaction.rollback();
+    console.error('Error deleting user:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete user',
+      error: error.message
+    });
+  }
+};
+
+const reportUser = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    if (!id || Number.isNaN(Number(id))) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid user id'
+      });
+    }
+
+    const user = await User.findByPk(id);
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    if (user.role === 'admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Cannot report admin accounts'
+      });
+    }
+
+    user.action_button = true;
+    await user.save();
+
+    res.status(200).json({
+      success: true,
+      message: 'User reported and blocked from login'
+    });
+  } catch (error) {
+    console.error('Error reporting user:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to report user',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   sendOTP,
   verifyOTP,
   getUserProfile,
   updateProfile,
-  listUsers
+  listUsers,
+  deleteUser,
+  reportUser
 };

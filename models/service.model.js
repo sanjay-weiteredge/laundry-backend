@@ -38,6 +38,16 @@ module.exports = (sequelize, DataTypes) => {
       allowNull: true,
       defaultValue: 0.00
     },
+    vendor: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    },
+    user: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false
+    },
     created_at: {
       type: DataTypes.DATE,
       defaultValue: DataTypes.NOW

@@ -1,8 +1,16 @@
-const { Service } = require('../models');
+const { Service, Order, OrderItem, sequelize } = require('../models');
+
+const parseBoolean = (value, defaultValue = false) => {
+  if (value === undefined || value === null || value === '') return defaultValue;
+  if (typeof value === 'boolean') return value;
+  if (typeof value === 'number') return value === 1;
+  if (typeof value === 'string') return value.toLowerCase() === 'true' || value === '1';
+  return defaultValue;
+};
 
 exports.createService = async (req, res) => {
   try {
-    const { name, image, description, price } = req.body;
+    const { name, image, description, price, vendor, user } = req.body;
     
     if (!name || !image) {
       return res.status(400).json({ 
@@ -15,7 +23,9 @@ exports.createService = async (req, res) => {
       name,
       image,
       description: description || null,
-      price: price ? parseFloat(price) : 0.00
+      price: price ? parseFloat(price) : 0.00,
+      vendor: parseBoolean(vendor, false),
+      user: parseBoolean(user, false)
     });
 
     res.status(201).json({
@@ -33,10 +43,19 @@ exports.createService = async (req, res) => {
 };
 
 exports.getAllServices = async (req, res) => {
-  console.log("getAllServicessssssssss")
   try {
+    const { audience } = req.query;
+
+    const where = {};
+    if (audience === 'user') {
+      where.user = true;
+    } else if (audience === 'vendor') {
+      where.vendor = true;
+    }
+
     const services = await Service.findAll({
-      attributes: ['id', 'name', 'image', 'description', 'price', 'created_at']
+      where,
+      attributes: ['id', 'name', 'image', 'description', 'price', 'vendor', 'user', 'created_at']
     });
     
     res.status(200).json({
@@ -57,9 +76,8 @@ exports.getAllServices = async (req, res) => {
 exports.updateService = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, image, description, price } = req.body;
+    const { name, image, description, price, vendor, user } = req.body;
     
-    // Validate id parameter
     if (!id || isNaN(parseInt(id))) {
       return res.status(400).json({
         success: false,
@@ -75,7 +93,6 @@ exports.updateService = async (req, res) => {
       });
     }
 
-    // Update only provided fields
     if (name !== undefined && name !== null && name !== '') {
       service.name = name;
     }
@@ -98,6 +115,14 @@ exports.updateService = async (req, res) => {
       }
     }
 
+    if (vendor !== undefined) {
+      service.vendor = parseBoolean(vendor, service.vendor);
+    }
+
+    if (user !== undefined) {
+      service.user = parseBoolean(user, service.user);
+    }
+
     await service.save();
     
     res.status(200).json({
@@ -118,24 +143,45 @@ exports.updateService = async (req, res) => {
 };
 
 exports.deleteService = async (req, res) => {
+  const transaction = await sequelize.transaction();
   try {
     const { id } = req.params;
     
-    const service = await Service.findByPk(id);
+    const service = await Service.findByPk(id, { transaction });
     if (!service) {
+      await transaction.rollback();
       return res.status(404).json({
         success: false,
         message: 'Service not found'
       });
     }
 
-    await service.destroy();
+    const orders = await Order.findAll({
+      where: { service_id: id },
+      attributes: ['id'],
+      transaction
+    });
+    const orderIds = orders.map((o) => o.id);
+
+    if (orderIds.length) {
+      // Delete order items for these orders
+      await OrderItem.destroy({ where: { order_id: orderIds }, transaction });
+      // Delete orders for this service
+      await Order.destroy({ where: { id: orderIds }, transaction });
+    }
+
+    // Also delete any order items directly referencing this service (defensive)
+    await OrderItem.destroy({ where: { service_id: id }, transaction });
+
+    await service.destroy({ transaction });
+    await transaction.commit();
     
     res.status(200).json({
       success: true,
       message: 'Service deleted successfully'
     });
   } catch (error) {
+    await transaction.rollback();
     console.error('Error deleting service:', error);
     res.status(500).json({
       success: false,

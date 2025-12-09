@@ -5,7 +5,9 @@ const {
   verifyOTP, 
   getUserProfile, 
   updateProfile,
-  listUsers
+  listUsers,
+  deleteUser,
+  reportUser
 } = require('../controllers/user.controller');
 const { skipAuth } = require('../middleware/auth.middleware');
 const adminAuth = require('../middleware/admin.middleware');
@@ -13,6 +15,8 @@ const { uploadImage } = require('../utils/fileUpload');
 
 
 router.get('/', adminAuth, listUsers);
+router.delete('/:id', adminAuth, deleteUser);
+router.post('/:id/report', adminAuth, reportUser);
 
 router.post('/send-otp', sendOTP);
 router.post('/verify-otp', verifyOTP);
