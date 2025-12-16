@@ -185,9 +185,8 @@ const updateProfile = async (req, res) => {
     
    
     if (req.file) {
-      const baseUrl = `${req.protocol}://${req.get('host')}`;
-      const imagePath = `/uploads/${req.file.filename}`;
-      updates.image = `${baseUrl}${imagePath}`;
+      
+      updates.image = req.file.location || req.file.path;
     }
 
    
