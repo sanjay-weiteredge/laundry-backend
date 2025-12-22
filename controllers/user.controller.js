@@ -25,13 +25,13 @@ const sendOTP = async (req, res) => {
     console.log("phone number:", phone_number);
     console.log("otp:", otp);
     try {
-      const result = await client.messages.create({
-        body: `Your OTP for authentication is: ${otp}. This OTP is valid for 10 minutes.`,
-        from: process.env.TWILIO_PHONE_NUMBER,
-        to: "+918292355155"
-      });
+      // const result = await client.messages.create({
+      //   body: `Your OTP for authentication is: ${otp}. This OTP is valid for 10 minutes.`,
+      //   from: process.env.TWILIO_PHONE_NUMBER,
+      //   to: "+918292355155"
+      // });
 
-      console.log('Twilio message sent:', result);
+      // console.log('Twilio message sent:', result);
 
 
       res.json({
