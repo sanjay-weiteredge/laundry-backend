@@ -1,6 +1,10 @@
 const { User, Order, OrderItem, Address, sequelize } = require('../models');
 const AuthService = require('../services/auth.service');
 const { Op } = require('sequelize');
+const twilio = require('twilio');
+const AccountSid = process.env.TWILIO_ACCOUNT_SID;
+const AuthToken = process.env.TWILIO_AUTH_TOKEN;
+const client = new twilio(AccountSid, AuthToken);
 
 
 const sendOTP = async (req, res) => {
@@ -13,14 +17,33 @@ const sendOTP = async (req, res) => {
         message: 'Phone number is required'
       });
     }
-    
+
    
-    res.json({
-      success: true,
-      message: 'OTP sent successfully',
-      otp: '0000',
-      phone_number: phone_number
-    });
+    const otp = Math.floor(1000 + Math.random() * 9000).toString();
+
+    
+    console.log("phone number:", phone_number);
+    console.log("otp:", otp);
+    try {
+      const result = await client.messages.create({
+        body: `Your OTP for authentication is: ${otp}. This OTP is valid for 10 minutes.`,
+        from: process.env.TWILIO_PHONE_NUMBER,
+        to: "+918292355155"
+      });
+
+      console.log('Twilio message sent:', result);
+
+
+      res.json({
+        success: true,
+        message: 'OTP sent successfully',
+        
+        phone_number: phone_number
+      });
+    } catch (twilioError) {
+      console.error('Twilio error:', twilioError);
+      throw new Error('Failed to send OTP via SMS');
+    }
     
   } catch (error) {
     console.error('Error sending OTP:', error);
@@ -44,7 +67,7 @@ const verifyOTP = async (req, res) => {
       });
     }
     
-    // Check if the provided OTP matches the static OTP
+    
     if (otp !== '0000') {
       return res.status(400).json({
         success: false,
@@ -52,7 +75,7 @@ const verifyOTP = async (req, res) => {
       });
     }
     
-    // Find or create user
+   
     let user = await User.findOne({ where: { phone_number } });
     const isNewUser = !user;
 
