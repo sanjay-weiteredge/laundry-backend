@@ -116,7 +116,7 @@ const bookingController = {
     console.log("bookService", req.body);
     
     try {
-      const { services, slotStart, slotEnd, addressId, notes } = req.body;
+      const { services, slotStart, slotEnd, addressId, notes, isExpress } = req.body;
       const userId = req.user.id;
 
       if (!Array.isArray(services) || services.length === 0 || !slotStart || !slotEnd || !addressId) {
@@ -233,7 +233,8 @@ const bookingController = {
         pickup_slot_end: utcEnd,
         order_status: 'pending',
         payment_mode: 'cash',
-        notes: notes || null
+        notes: notes || null,
+        is_express: isExpress === true || isExpress === 'true' || isExpress === 1
       }, { transaction });
       
       console.log('Order times - Start:', utcStart, 'End:', utcEnd);
@@ -285,6 +286,7 @@ const bookingController = {
           'pickup_slot_end', 
           'created_at', 
           'notes',
+          'is_express',
           // Convert UTC times back to IST for display
           [
             sequelize.fn(

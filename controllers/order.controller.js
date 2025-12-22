@@ -10,7 +10,7 @@ const orderController = {
           {
             model: OrderItem,
             as: 'items',
-            attributes: ['id', 'quantity'],
+            attributes: ['id', 'quantity', 'total_amount'],
             include: [{
               model: Service,
               as: 'service',
@@ -57,7 +57,7 @@ getUserOrders: async (req, res) => {
         {
           model: OrderItem,
           as: 'items',
-          attributes: ['id', 'quantity'],
+          attributes: ['id', 'quantity', 'total_amount'],
           include: [{
             model: Service,
             as: 'service',
@@ -83,23 +83,37 @@ getUserOrders: async (req, res) => {
         'pickup_scheduled_at',
         'pickup_slot_end',
         'picked_up_at',
-        'delivered_at'
+        'delivered_at',
+       
+
       ],
       order: [['created_at', 'DESC']]
     });
 
     const formattedOrders = orders.map(order => {
+      console.log(`Processing order ${order.id} with ${order.items.length} items`);
       
       const services = order.items.map(item => {
         const service = item.service || {};
         const unitPrice = service.price ? Number(service.price) : 0;
+        const quantity = item.quantity || 0;
+        const totalAmount = item.total_amount !== null && item.total_amount !== undefined 
+          ? Number(item.total_amount) 
+          : null;
+        const lineTotal = totalAmount !== null 
+          ? totalAmount 
+          : unitPrice * quantity;
+          
+        console.log(`Item ${item.id}: quantity=${quantity}, unitPrice=${unitPrice}, total_amount=${item.total_amount}, calculated lineTotal=${lineTotal}`);
+        
         return {
           id: service.id,
           name: service.name,
           description: service.description,
-          quantity: item.quantity,
+          quantity: quantity,
           price: unitPrice,
-          lineTotal: unitPrice * (item.quantity || 0)
+          lineTotal: lineTotal,
+          totalAmount: totalAmount
         };
       });
 
@@ -133,10 +147,16 @@ getUserOrders: async (req, res) => {
       };
     });
 
-    res.json({
+    console.log('Sending response with', formattedOrders.length, 'orders');
+    
+    const response = {
       success: true,
       data: formattedOrders
-    });
+    };
+    
+    console.log('First order sample:', JSON.stringify(response.data[0], null, 2));
+    
+    res.json(response);
 
   } catch (error) {
     console.error('Error fetching user orders:', error);
@@ -195,7 +215,7 @@ getUserOrders: async (req, res) => {
           {
             model: OrderItem,
             as: 'items',
-            attributes: ['id', 'quantity'],
+            attributes: ['id', 'quantity', 'total_amount'],
             include: [{
               model: Service,
               as: 'service',
@@ -324,7 +344,7 @@ getUserOrders: async (req, res) => {
           {
             model: OrderItem,
             as: 'items',
-            attributes: ['id', 'quantity'],
+            attributes: ['id', 'quantity', 'total_amount'],
             include: [{
               model: Service,
               as: 'service',
@@ -390,7 +410,7 @@ getUserOrders: async (req, res) => {
           {
             model: OrderItem,
             as: 'items',
-            attributes: ['id', 'quantity'],
+            attributes: ['id', 'quantity', 'total_amount'],
             include: [{
               model: Service,
               as: 'service',
