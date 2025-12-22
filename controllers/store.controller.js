@@ -78,6 +78,7 @@ const storeController = {
             FROM orders o
             JOIN order_items oi ON oi.order_id = o.id
             WHERE o.store_id IN (:storeIds)
+              AND o.order_status = 'delivered'
             GROUP BY o.store_id
           `,
           {
@@ -194,9 +195,47 @@ const storeController = {
         });
       }
 
+      const now = new Date();
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const last90DaysStart = new Date(now);
+      last90DaysStart.setDate(last90DaysStart.getDate() - 90);
+      const lastYearStart = new Date(now);
+      lastYearStart.setFullYear(lastYearStart.getFullYear() - 1);
+
+      const [revenueRow] = await sequelize.query(
+        `
+          SELECT 
+            SUM(CASE WHEN o.created_at >= :startOfMonth THEN COALESCE(oi.total_amount, 0) ELSE 0 END) AS "currentMonthRevenue",
+            SUM(CASE WHEN o.created_at >= :last90DaysStart THEN COALESCE(oi.total_amount, 0) ELSE 0 END) AS "last90DaysRevenue",
+            SUM(CASE WHEN o.created_at >= :lastYearStart THEN COALESCE(oi.total_amount, 0) ELSE 0 END) AS "lastYearRevenue"
+          FROM orders o
+          JOIN order_items oi ON oi.order_id = o.id
+          WHERE o.store_id = :storeId
+            AND o.order_status = 'delivered'
+        `,
+        {
+          replacements: {
+            startOfMonth,
+            last90DaysStart,
+            lastYearStart,
+            storeId: store.id
+          },
+          type: QueryTypes.SELECT
+        }
+      );
+
+      const revenue = {
+        currentMonth: Number(revenueRow?.currentMonthRevenue || 0),
+        last90Days: Number(revenueRow?.last90DaysRevenue || 0),
+        lastYear: Number(revenueRow?.lastYearRevenue || 0)
+      };
+
       res.json({
         success: true,
-        data: store
+        data: {
+          ...store.get({ plain: true }),
+          revenue
+        }
       });
     } catch (error) {
       console.error('Get store profile error:', error);
