@@ -1,4 +1,5 @@
 const db = require('../models');
+const { QueryTypes } = require('sequelize');
 const { Store, Order, OrderItem, Service, User, Address } = db;
 const { sequelize } = db;
 const bcrypt = require('bcrypt');
@@ -56,9 +57,63 @@ const storeController = {
         order: [['created_at', 'DESC']]
       });
 
+      const storeIds = stores.map((store) => store.id);
+      let revenueByStore = {};
+
+      if (storeIds.length > 0) {
+        const now = new Date();
+        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        const last90DaysStart = new Date(now);
+        last90DaysStart.setDate(last90DaysStart.getDate() - 90);
+        const lastYearStart = new Date(now);
+        lastYearStart.setFullYear(lastYearStart.getFullYear() - 1);
+
+        const revenueRows = await sequelize.query(
+          `
+            SELECT 
+              o.store_id AS "storeId",
+              SUM(CASE WHEN o.created_at >= :startOfMonth THEN COALESCE(oi.total_amount, 0) ELSE 0 END) AS "currentMonthRevenue",
+              SUM(CASE WHEN o.created_at >= :last90DaysStart THEN COALESCE(oi.total_amount, 0) ELSE 0 END) AS "last90DaysRevenue",
+              SUM(CASE WHEN o.created_at >= :lastYearStart THEN COALESCE(oi.total_amount, 0) ELSE 0 END) AS "lastYearRevenue"
+            FROM orders o
+            JOIN order_items oi ON oi.order_id = o.id
+            WHERE o.store_id IN (:storeIds)
+            GROUP BY o.store_id
+          `,
+          {
+            replacements: {
+              startOfMonth,
+              last90DaysStart,
+              lastYearStart,
+              storeIds
+            },
+            type: QueryTypes.SELECT
+          }
+        );
+
+        revenueByStore = revenueRows.reduce((acc, row) => {
+          acc[row.storeId] = {
+            currentMonth: Number(row.currentMonthRevenue || 0),
+            last90Days: Number(row.last90DaysRevenue || 0),
+            lastYear: Number(row.lastYearRevenue || 0)
+          };
+          return acc;
+        }, {});
+      }
+
+      const storesWithRevenue = stores.map((store) => {
+        const storeData = store.get({ plain: true });
+        storeData.revenue = revenueByStore[store.id] || {
+          currentMonth: 0,
+          last90Days: 0,
+          lastYear: 0
+        };
+        return storeData;
+      });
+
       res.json({
         success: true,
-        data: stores
+        data: storesWithRevenue
       });
     } catch (error) {
       console.error('Error fetching stores:', error);

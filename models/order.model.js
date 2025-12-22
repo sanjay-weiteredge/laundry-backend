@@ -73,6 +73,12 @@ module.exports = (sequelize, DataTypes) => {
       type: DataTypes.TEXT,
       allowNull: true
     },
+    is_express: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: 'Indicates if the order is an express service'
+    },
     payment_mode: {
       type: DataTypes.STRING(20),
       defaultValue: 'cash',
