@@ -78,6 +78,7 @@ const storeController = {
             FROM orders o
             JOIN order_items oi ON oi.order_id = o.id
             WHERE o.store_id IN (:storeIds)
+              AND o.order_status = 'delivered'
             GROUP BY o.store_id
           `,
           {
@@ -210,6 +211,7 @@ const storeController = {
           FROM orders o
           JOIN order_items oi ON oi.order_id = o.id
           WHERE o.store_id = :storeId
+            AND o.order_status = 'delivered'
         `,
         {
           replacements: {
