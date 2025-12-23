@@ -10,9 +10,10 @@ const parseBoolean = (value, defaultValue = false) => {
 
 exports.createService = async (req, res) => {
   try {
-    const { name, image, description, price, vendor, user } = req.body;
+    const { name, description, price, vendor, user } = req.body;
+    const imageUrl = req.file ? (req.file.location || req.file.path) : null;
     
-    if (!name || !image) {
+    if (!name || !imageUrl) {
       return res.status(400).json({ 
         success: false,
         message: 'Name and image are required fields' 
@@ -21,7 +22,7 @@ exports.createService = async (req, res) => {
 
     const service = await Service.create({
       name,
-      image,
+      image: imageUrl,
       description: description || null,
       price: price ? parseFloat(price) : 0.00,
       vendor: parseBoolean(vendor, false),

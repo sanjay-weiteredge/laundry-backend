@@ -3,6 +3,13 @@ const path = require('path');
 const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
 const multerS3 = require('multer-s3');
 
+const getUploadFolder = (fieldName) => {
+  if (fieldName === 'poster') {
+    return 'posters/';
+  }
+  return 'users/';
+};
+
 // Configure AWS S3 client
 const s3Client = new S3Client({
   region: process.env.S3_REGION,
@@ -22,7 +29,8 @@ const s3Storage = multerS3({
   key: function (req, file, cb) {
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
     const ext = path.extname(file.originalname).toLowerCase();
-    cb(null, 'users/' + uniqueSuffix + ext);
+    const folder = getUploadFolder(file.fieldname);
+    cb(null, folder + uniqueSuffix + ext);
   },
   // Add content type to ensure proper file handling
   contentType: function (req, file, cb) {
@@ -42,35 +50,38 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-// Configure multer with S3 storage
-const upload = multer({
-  storage: s3Storage,
-  fileFilter: fileFilter,
-  limits: {
-    fileSize: 5 * 1024 * 1024 // 5MB limit
-  }
-}).single('image');
-
-// Middleware to handle file upload
-const uploadImage = (req, res, next) => {
-  upload(req, res, function (err) {
-    if (err instanceof multer.MulterError) {
-      // A Multer error occurred when uploading
-      return res.status(400).json({
-        success: false,
-        message: err.message
-      });
-    } else if (err) {
-      // An unknown error occurred
-      return res.status(500).json({
-        success: false,
-        message: err.message
-      });
+const createUploadMiddleware = (fieldName) => {
+  const upload = multer({
+    storage: s3Storage,
+    fileFilter: fileFilter,
+    limits: {
+      fileSize: 5 * 1024 * 1024 // 5MB limit
     }
-    // Everything went fine
-    next();
-  });
+  }).single(fieldName);
+
+  return (req, res, next) => {
+    upload(req, res, function (err) {
+      if (err instanceof multer.MulterError) {
+        // A Multer error occurred when uploading
+        return res.status(400).json({
+          success: false,
+          message: err.message
+        });
+      } else if (err) {
+        // An unknown error occurred
+        return res.status(500).json({
+          success: false,
+          message: err.message
+        });
+      }
+      // Everything went fine
+      next();
+    });
+  };
 };
+
+const uploadImage = createUploadMiddleware('image');
+const uploadPoster = createUploadMiddleware('poster');
 
 // Function to delete a file from S3
 const deleteFileFromS3 = async (url) => {
@@ -97,6 +108,7 @@ const deleteFileFromS3 = async (url) => {
 
 module.exports = {
   uploadImage,
+  uploadPoster,
   deleteFileFromS3
 };
 

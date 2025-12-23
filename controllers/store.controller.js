@@ -125,6 +125,104 @@ const storeController = {
       });
     }
   },
+  
+  setRevenuePassword: async (req, res) => {
+    try {
+      const { newPassword, currentPassword } = req.body;
+
+      // Validate input
+      if (!newPassword || !currentPassword) {
+        return res.status(400).json({
+          success: false,
+          message: 'Both current password and new password are required'
+        });
+      }
+
+      // Find the store
+      const store = await Store.findByPk(req.store.id);
+      if (!store) {
+        return res.status(404).json({
+          success: false,
+          message: 'Store not found'
+        });
+      }
+
+      // Verify current password
+      const isPasswordValid = await bcrypt.compare(currentPassword, store.password_hash);
+      if (!isPasswordValid) {
+        return res.status(401).json({
+          success: false,
+          message: 'Current password is incorrect'
+        });
+      }
+
+      // Hash the new revenue password
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+      // Update the revenue password
+      await store.update({ revenue_password_hash: hashedPassword });
+
+      return res.json({
+        success: true,
+        message: 'Revenue password set successfully'
+      });
+
+    } catch (error) {
+      console.error('Set revenue password error:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to set revenue password',
+        error: error.message
+      });
+    }
+  },
+
+  verifyRevenuePassword: async (req, res) => {
+  try {
+    const { revenuePassword } = req.body;
+
+    if (!revenuePassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'Revenue password required'
+      });
+    }
+
+    const store = await Store.findByPk(req.store.id);
+
+    if (!store || !store.revenue_password_hash) {
+      return res.status(403).json({
+        success: false,
+        message: 'Revenue password not set'
+      });
+    }
+
+    const isValid = await bcrypt.compare(
+      revenuePassword,
+      store.revenue_password_hash
+    );
+
+    if (!isValid) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid revenue password'
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: 'Revenue access granted'
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+},
+
 
   storeLogin: async (req, res) => {
     try {
@@ -272,6 +370,7 @@ const storeController = {
           'delivered_at',
           'payment_mode',
           'notes',
+          'is_express',
           'created_at',
           'updated_at'
         ],
