@@ -16,4 +16,8 @@ router.patch('/stores/status', storeAuth, storeController.updateStoreStatus);
 router.get('/stores/orders', storeAuth, storeController.getStoreOrders);
 router.put('/stores/orders/:orderId/items', storeAuth, storeController.updateOrderItems);
 
+
+router.post('/stores/revenue/set-password', storeAuth, storeController.setRevenuePassword);
+router.post('/stores/revenue/verify', storeAuth, storeController.verifyRevenuePassword);
+
 module.exports = router;

@@ -9,6 +9,7 @@ const {
   deleteUser,
   reportUser
 } = require('../controllers/user.controller');
+const { getActivePosters } = require('../controllers/poster.controller');
 const { skipAuth } = require('../middleware/auth.middleware');
 const adminAuth = require('../middleware/admin.middleware');
 const { uploadImage } = require('../utils/fileUpload');
@@ -23,6 +24,7 @@ router.post('/verify-otp', verifyOTP);
 
 
 router.use(skipAuth);
+router.get('/posters', getActivePosters);
 router.get('/profile', getUserProfile);
 router.put('/update-profile', uploadImage, updateProfile);
 

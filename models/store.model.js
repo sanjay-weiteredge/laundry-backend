@@ -22,6 +22,11 @@ module.exports = (sequelize, DataTypes) => {
     async validatePassword(password) {
       return await bcrypt.compare(password, this.password_hash);
     }
+    
+    async validateRevenuePassword(password) {
+      if (!this.revenue_password_hash) return false;
+      return await bcrypt.compare(password, this.revenue_password_hash);
+    }
   }
   
   Store.init({
@@ -77,6 +82,10 @@ module.exports = (sequelize, DataTypes) => {
     is_admin_locked: {
       type: DataTypes.BOOLEAN,
       defaultValue: false
+    },
+    revenue_password_hash: {
+      type: DataTypes.STRING(255),
+      allowNull: true
     },
     created_at: {
       type: DataTypes.DATE,
