@@ -2,6 +2,7 @@ const { Op, Sequelize } = require('sequelize');
 const { sequelize } = require('../models');
 const { Order, Service, Store, User, Address, ServicePricing, OrderItem } = require('../models');
 const { getDistance } = require('geolib');
+const { createNotification } = require('../utils/notificationHelper');
 
 const bookingController = {
  
@@ -268,6 +269,20 @@ const bookingController = {
       // Commit the transaction
       await transaction.commit();
       console.log('Order successfully booked with ID:', order.id);
+      
+      // Create notification for successful order
+      try {
+        await createNotification({
+          userId: userId,
+          storeId: nearestStore.id,
+          title: 'Order Placed Successfully',
+          message: `Your order #${order.id} has been placed successfully and assigned to ${nearestStore.name}.`,
+          type: 'order_created'
+        });
+      } catch (notifError) {
+        console.error('Error creating order notification:', notifError);
+        // Don't fail the order creation if notification fails
+      }
       
       // Log store assignment
       console.log(`Order assigned to store: ${nearestStore.name} (ID: ${nearestStore.id})`);

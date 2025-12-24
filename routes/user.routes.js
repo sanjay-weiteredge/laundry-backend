@@ -7,7 +7,10 @@ const {
   updateProfile,
   listUsers,
   deleteUser,
-  reportUser
+  reportUser,
+  getUserNotifications,
+  markNotificationAsRead,
+  markAllNotificationsAsRead
 } = require('../controllers/user.controller');
 const { getActivePosters } = require('../controllers/poster.controller');
 const { skipAuth } = require('../middleware/auth.middleware');
@@ -27,5 +30,8 @@ router.use(skipAuth);
 router.get('/posters', getActivePosters);
 router.get('/profile', getUserProfile);
 router.put('/update-profile', uploadImage, updateProfile);
+router.get('/notifications', getUserNotifications);
+router.put('/notifications/:id/read', markNotificationAsRead);
+router.put('/notifications/read-all', markAllNotificationsAsRead);
 
 module.exports = router;

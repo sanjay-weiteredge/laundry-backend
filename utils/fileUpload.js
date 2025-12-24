@@ -51,33 +51,33 @@ const fileFilter = (req, file, cb) => {
 };
 
 const createUploadMiddleware = (fieldName) => {
-  const upload = multer({
-    storage: s3Storage,
-    fileFilter: fileFilter,
-    limits: {
-      fileSize: 5 * 1024 * 1024 // 5MB limit
-    }
+const upload = multer({
+  storage: s3Storage,
+  fileFilter: fileFilter,
+  limits: {
+    fileSize: 5 * 1024 * 1024 // 5MB limit
+  }
   }).single(fieldName);
 
   return (req, res, next) => {
-    upload(req, res, function (err) {
-      if (err instanceof multer.MulterError) {
-        // A Multer error occurred when uploading
-        return res.status(400).json({
-          success: false,
-          message: err.message
-        });
-      } else if (err) {
-        // An unknown error occurred
-        return res.status(500).json({
-          success: false,
-          message: err.message
-        });
-      }
-      // Everything went fine
-      next();
-    });
-  };
+  upload(req, res, function (err) {
+    if (err instanceof multer.MulterError) {
+      // A Multer error occurred when uploading
+      return res.status(400).json({
+        success: false,
+        message: err.message
+      });
+    } else if (err) {
+      // An unknown error occurred
+      return res.status(500).json({
+        success: false,
+        message: err.message
+      });
+    }
+    // Everything went fine
+    next();
+  });
+};
 };
 
 const uploadImage = createUploadMiddleware('image');

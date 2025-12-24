@@ -19,5 +19,6 @@ router.put('/stores/orders/:orderId/items', storeAuth, storeController.updateOrd
 
 router.post('/stores/revenue/set-password', storeAuth, storeController.setRevenuePassword);
 router.post('/stores/revenue/verify', storeAuth, storeController.verifyRevenuePassword);
+router.get('/stores/transactions', storeAuth, storeController.getTransactionHistory);
 
 module.exports = router;
