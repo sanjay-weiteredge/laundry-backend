@@ -10,8 +10,7 @@ router.use(auth);
 
 
 router.post('/create', adminAuth, uploadImage, servicesController.createService);
-router.put('/update/:id', adminAuth, servicesController.updateService);
-router.delete('/delete/:id', adminAuth, servicesController.deleteService);
+router.put('/update/:id', adminAuth, uploadImage, servicesController.updateService);router.delete('/delete/:id', adminAuth, servicesController.deleteService);
 
 router.get('/all', servicesController.getAllServices);
 

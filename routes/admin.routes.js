@@ -10,7 +10,8 @@ router.post('/signup', adminController.signup);
 router.post('/login', adminController.login);
 
 router.post('/posters', adminAuth, uploadPoster, posterController.createPoster);
-
+router.get('/posters',posterController.getActivePosters);
+router.delete('/posters/:id', adminAuth, posterController.deletePoster);
 router.get('/profile', adminAuth, adminController.getProfile);
 
 module.exports = router;

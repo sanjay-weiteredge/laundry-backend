@@ -44,6 +44,7 @@ exports.createService = async (req, res) => {
 };
 
 exports.getAllServices = async (req, res) => {
+  
   try {
     const { audience } = req.query;
 
@@ -75,6 +76,8 @@ exports.getAllServices = async (req, res) => {
 };
 
 exports.updateService = async (req, res) => {
+  const uploadedImageUrl = req.file ? (req.file.location || req.file.path) : null;
+  
   try {
     const { id } = req.params;
     const { name, image, description, price, vendor, user } = req.body;
@@ -97,9 +100,11 @@ exports.updateService = async (req, res) => {
     if (name !== undefined && name !== null && name !== '') {
       service.name = name;
     }
-    if (image !== undefined && image !== null && image !== '') {
-      service.image = image;
-    }
+    if (uploadedImageUrl) {
+  service.image = uploadedImageUrl;
+} else if (image !== undefined && image !== null && image !== '') {
+  service.image = image;
+}
     if (description !== undefined) {
       service.description = description || null;
     }

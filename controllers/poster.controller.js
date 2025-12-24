@@ -55,3 +55,32 @@ exports.getActivePosters = async (req, res) => {
   }
 };
 
+exports.deletePoster = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const poster = await Poster.findByPk(id);
+
+    if (!poster || poster.is_active === false) {
+      return res.status(404).json({
+        success: false,
+        message: 'Poster not found'
+      });
+    }
+
+    poster.is_active = false;
+    await poster.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Poster deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting poster:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete poster',
+      error: error.message
+    });
+  }
+};
+
