@@ -1,4 +1,4 @@
-const { User, Order, OrderItem, Address, sequelize } = require('../models');
+const { User, Order, OrderItem, Address, Notification, sequelize } = require('../models');
 const AuthService = require('../services/auth.service');
 const { Op } = require('sequelize');
 const twilio = require('twilio');
@@ -401,6 +401,135 @@ const reportUser = async (req, res) => {
   }
 };
 
+const getUserNotifications = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { limit = 50, offset = 0 } = req.query;
+
+    const notifications = await Notification.findAll({
+      where: {
+        user_id: userId
+      },
+      attributes: [
+        'id',
+        'title',
+        'message',
+        'type',
+        'is_read',
+        'created_at'
+      ],
+      include: [
+        {
+          model: require('../models').Store,
+          as: 'store',
+          attributes: ['id', 'name']
+        }
+      ],
+      order: [['created_at', 'DESC']],
+      limit: parseInt(limit, 10),
+      offset: parseInt(offset, 10)
+    });
+
+    const unreadCount = await Notification.count({
+      where: {
+        user_id: userId,
+        is_read: false
+      }
+    });
+
+    const formattedNotifications = notifications.map(notification => ({
+      id: notification.id,
+      title: notification.title,
+      reason: notification.message,
+      time: notification.created_at,
+      type: notification.type,
+      isRead: notification.is_read,
+      storeName: notification.store ? notification.store.name : null
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        notifications: formattedNotifications,
+        unreadCount,
+        total: notifications.length
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching user notifications:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch notifications',
+      error: error.message
+    });
+  }
+};
+
+const markNotificationAsRead = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    const notification = await Notification.findOne({
+      where: {
+        id,
+        user_id: userId
+      }
+    });
+
+    if (!notification) {
+      return res.status(404).json({
+        success: false,
+        message: 'Notification not found'
+      });
+    }
+
+    await notification.update({
+      is_read: true
+    });
+
+    res.json({
+      success: true,
+      message: 'Notification marked as read'
+    });
+  } catch (error) {
+    console.error('Error marking notification as read:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update notification',
+      error: error.message
+    });
+  }
+};
+
+const markAllNotificationsAsRead = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    await Notification.update(
+      { is_read: true },
+      {
+        where: {
+          user_id: userId,
+          is_read: false
+        }
+      }
+    );
+
+    res.json({
+      success: true,
+      message: 'All notifications marked as read'
+    });
+  } catch (error) {
+    console.error('Error marking all notifications as read:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update notifications',
+      error: error.message
+    });
+  }
+};
+
 module.exports = {
   sendOTP,
   verifyOTP,
@@ -408,5 +537,8 @@ module.exports = {
   updateProfile,
   listUsers,
   deleteUser,
-  reportUser
+  reportUser,
+  getUserNotifications,
+  markNotificationAsRead,
+  markAllNotificationsAsRead
 };

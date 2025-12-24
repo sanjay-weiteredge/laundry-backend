@@ -1,6 +1,7 @@
 const db = require('../models');
 const { Order, User, Service, Store, OrderItem, Address } = db;
 const { Op } = require('sequelize');
+const { createNotification } = require('../utils/notificationHelper');
 
 const orderController = {
   getAllOrders: async (req, res) => {
@@ -396,8 +397,35 @@ getUserOrders: async (req, res) => {
         updateData.admin_notes = notes;
       }
 
+      const oldStatus = order.order_status;
       await order.update(updateData, { transaction });
       await transaction.commit();
+
+      // Create notification for user when order status changes
+      try {
+        const statusMessages = {
+          'confirmed': 'Your order has been confirmed by the vendor.',
+          'picked_up': 'Your order has been picked up.',
+          'processing': 'Your order is being processed.',
+          'ready_for_delivery': 'Your order is ready for delivery.',
+          'out_for_delivery': 'Your order is out for delivery.',
+          'delivered': 'Your order has been delivered successfully.',
+          'cancelled': 'Your order has been cancelled.'
+        };
+
+        if (oldStatus !== status && statusMessages[status]) {
+          await createNotification({
+            userId: order.user_id,
+            storeId: order.store_id,
+            title: `Order Status Updated - ${status.charAt(0).toUpperCase() + status.slice(1).replace(/_/g, ' ')}`,
+            message: `Order #${orderId}: ${statusMessages[status]}`,
+            type: 'order_status_updated'
+          });
+        }
+      } catch (notifError) {
+        console.error('Error creating status update notification:', notifError);
+        // Don't fail the status update if notification fails
+      }
 
       // Fetch the updated order with all its relationships
       const updatedOrder = await Order.findByPk(orderId, {

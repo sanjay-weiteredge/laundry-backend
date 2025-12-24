@@ -4,6 +4,7 @@ const { Store, Order, OrderItem, Service, User, Address } = db;
 const { sequelize } = db;
 const bcrypt = require('bcrypt');
 const { generateToken } = require('../utils/jwt');
+const { createNotification } = require('../utils/notificationHelper');
 
 const storeController = {
   createStore: async (req, res) => {
@@ -590,6 +591,22 @@ const storeController = {
         ]
       });
 
+      // Create notification for user when order items are updated
+      if (updatedOrder && updatedOrder.user) {
+        try {
+          await createNotification({
+            userId: updatedOrder.user.id,
+            storeId: req.store.id,
+            title: 'Order Items Updated',
+            message: `The vendor has updated the items in your order #${orderId}. Please check the updated order details.`,
+            type: 'order_status_updated'
+          });
+        } catch (notifError) {
+          console.error('Error creating order items update notification:', notifError);
+          // Don't fail the update if notification fails
+        }
+      }
+
       const verifyItems = await OrderItem.findAll({
         where: { order_id: orderId },
         attributes: ['id', 'service_id', 'quantity', 'total_amount'],
@@ -790,6 +807,88 @@ const storeController = {
       res.status(500).json({
         success: false,
         message: 'Server error',
+        error: error.message
+      });
+    }
+  },
+
+  getTransactionHistory: async (req, res) => {
+    try {
+      const { period = '30' } = req.query; 
+      
+      
+      const validPeriods = ['30', '90', '365'];
+      if (!validPeriods.includes(period.toString())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid period. Allowed values: 30, 90, or 365 days'
+        });
+      }
+
+      const days = parseInt(period, 10);
+      const now = new Date();
+      const startDate = new Date(now);
+      startDate.setDate(startDate.getDate() - days);
+      
+      
+      const transactions = await sequelize.query(
+        `
+          SELECT 
+            o.id AS "orderId",
+            o.delivered_at AS "deliveredDate",
+            u.name AS "userName",
+            COALESCE(SUM(oi.total_amount), 0) AS "totalAmount"
+          FROM orders o
+          INNER JOIN users u ON u.id = o.user_id
+          LEFT JOIN order_items oi ON oi.order_id = o.id
+          WHERE o.store_id = :storeId
+            AND o.order_status = 'delivered'
+            AND o.delivered_at IS NOT NULL
+            AND o.delivered_at >= :startDate
+            AND o.delivered_at <= :endDate
+          GROUP BY o.id, o.delivered_at, u.name
+          ORDER BY o.delivered_at DESC
+        `,
+        {
+          replacements: {
+            storeId: req.store.id,
+            startDate: startDate,
+            endDate: now
+          },
+          type: QueryTypes.SELECT
+        }
+      );
+
+      
+      const totalRevenue = transactions.reduce((sum, transaction) => {
+        return sum + parseFloat(transaction.totalAmount || 0);
+      }, 0);
+
+      const totalTransactions = transactions.length;
+
+      res.json({
+        success: true,
+        data: {
+          period: `${days} days`,
+          startDate: startDate.toISOString(),
+          endDate: now.toISOString(),
+          summary: {
+            totalTransactions,
+            totalRevenue: parseFloat(totalRevenue.toFixed(2))
+          },
+          transactions: transactions.map(transaction => ({
+            orderId: transaction.orderId,
+            deliveredDate: transaction.deliveredDate,
+            userName: transaction.userName,
+            totalAmount: parseFloat(transaction.totalAmount || 0)
+          }))
+        }
+      });
+    } catch (error) {
+      console.error('Get transaction history error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch transaction history',
         error: error.message
       });
     }
