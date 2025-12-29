@@ -79,6 +79,12 @@ module.exports = (sequelize, DataTypes) => {
       defaultValue: false,
       comment: 'Indicates if the order is an express service'
     },
+    is_walk_in: {
+      type: DataTypes.BOOLEAN,
+      allowNull: false,
+      defaultValue: false,
+      comment: 'Indicates if the order is a walk-in service'
+    },
     payment_mode: {
       type: DataTypes.STRING(20),
       defaultValue: 'cash',
