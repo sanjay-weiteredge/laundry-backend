@@ -892,7 +892,149 @@ const storeController = {
         error: error.message
       });
     }
+  },
+  getTransactionHistoryByDateRange: async (req, res) => {
+  try {
+    const { period, startDate: startDateParam, endDate: endDateParam } = req.query;
+    
+    let startDate, endDate = new Date();
+    
+    // If both startDate and endDate are provided, use them
+    if (startDateParam && endDateParam) {
+      startDate = new Date(startDateParam);
+      endDate = new Date(endDateParam);
+      
+      // Validate dates
+      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid date format. Please use ISO 8601 format (e.g., 2023-01-01)'
+        });
+      }
+      
+      if (startDate > endDate) {
+        return res.status(400).json({
+          success: false,
+          message: 'Start date cannot be after end date'
+        });
+      }
+    } 
+    // Otherwise, use the period parameter
+    else if (period) {
+      const validPeriods = ['30', '90', '365'];
+      if (!validPeriods.includes(period.toString())) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid period. Allowed values: 30, 90, or 365 days'
+        });
+      }
+      const days = parseInt(period, 10);
+      startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+    } 
+    
+    // If no parameters are provided, default to last 30 days
+    else {
+      startDate = new Date();
+      startDate.setDate(startDate.getDate() - 30);
+    }
+
+    // Format dates for query
+    const formatDate = (date) => date.toISOString().split('T')[0] + ' 00:00:00';
+    const formattedStartDate = formatDate(startDate);
+    const formattedEndDate = formatDate(endDate);
+
+   const transactions = await sequelize.query(
+  `
+    SELECT 
+      o.id AS "orderId",
+      o.delivered_at AS "deliveredDate",
+      u.name AS "userName",
+      COALESCE(SUM(oi.total_amount), 0) AS "totalAmount",
+      o.payment_mode AS "paymentMethod"
+    FROM orders o
+    INNER JOIN users u ON u.id = o.user_id
+    LEFT JOIN order_items oi ON oi.order_id = o.id
+    WHERE o.store_id = :storeId
+      AND o.order_status = 'delivered'
+      AND o.delivered_at IS NOT NULL
+      AND o.delivered_at >= :startDate
+      AND o.delivered_at <= :endDate
+    GROUP BY o.id, o.delivered_at, u.name, o.payment_mode
+    ORDER BY o.delivered_at DESC
+  `,
+  {
+    replacements: {
+      storeId: req.store.id,
+      startDate: formattedStartDate,
+      endDate: formattedEndDate
+    },
+    type: QueryTypes.SELECT
   }
+);
+
+    // Calculate summary statistics
+    const totalRevenue = transactions.reduce((sum, transaction) => {
+      return sum + parseFloat(transaction.totalAmount || 0);
+    }, 0);
+
+    const totalTransactions = transactions.length;
+
+    // Group by payment method
+    const paymentMethods = transactions.reduce((acc, transaction) => {
+      const method = transaction.paymentMethod || 'unknown';
+      if (!acc[method]) {
+        acc[method] = {
+          count: 0,
+          amount: 0
+        };
+      }
+      acc[method].count += 1;
+      acc[method].amount += parseFloat(transaction.totalAmount || 0);
+      return acc;
+    }, {});
+
+    res.json({
+      success: true,
+      data: {
+        dateRange: {
+          start: startDate.toISOString().split('T')[0],
+          end: endDate.toISOString().split('T')[0]
+        },
+        summary: {
+          totalTransactions,
+          totalRevenue: parseFloat(totalRevenue.toFixed(2)),
+          averageOrderValue: totalTransactions > 0 
+            ? parseFloat((totalRevenue / totalTransactions).toFixed(2))
+            : 0
+        },
+        paymentMethods: Object.entries(paymentMethods).map(([method, data]) => ({
+          method,
+          count: data.count,
+          amount: parseFloat(data.amount.toFixed(2)),
+          percentage: totalRevenue > 0 
+            ? parseFloat(((data.amount / totalRevenue) * 100).toFixed(2))
+            : 0
+        })),
+        transactions: transactions.map(transaction => ({
+          orderId: transaction.orderId,
+          deliveredDate: transaction.deliveredDate,
+          userName: transaction.userName,
+          totalAmount: parseFloat(transaction.totalAmount || 0),
+          paymentMethod: transaction.paymentMethod,
+          paymentStatus: transaction.paymentStatus
+        }))
+      }
+    });
+  } catch (error) {
+    console.error('Get transaction history error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch transaction history',
+      error: error.message
+    });
+  }
+}
 };
 
 module.exports = storeController;
