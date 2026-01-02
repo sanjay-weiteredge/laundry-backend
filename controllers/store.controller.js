@@ -372,6 +372,7 @@ const storeController = {
           'payment_mode',
           'notes',
           'is_express',
+          'is_walk_in',
           'created_at',
           'updated_at'
         ],
@@ -543,6 +544,7 @@ const storeController = {
         },
         attributes: [
           'id',
+          'service_id',
           'order_status',
           'pickup_scheduled_at',
           'pickup_slot_end',
@@ -550,6 +552,8 @@ const storeController = {
           'delivered_at',
           'payment_mode',
           'notes',
+          'is_express',
+          'is_walk_in',
           'created_at',
           'updated_at'
         ],
@@ -893,148 +897,406 @@ const storeController = {
       });
     }
   },
-  getTransactionHistoryByDateRange: async (req, res) => {
-  try {
-    const { period, startDate: startDateParam, endDate: endDateParam } = req.query;
-    
-    let startDate, endDate = new Date();
-    
-    // If both startDate and endDate are provided, use them
-    if (startDateParam && endDateParam) {
-      startDate = new Date(startDateParam);
-      endDate = new Date(endDateParam);
-      
-      // Validate dates
-      if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+
+  createOrder: async (req, res) => {
+    const transaction = await sequelize.transaction();
+    try {
+      const {
+        // Customer details
+        customerName,
+        customerPhone,
+        customerEmail,
+        // Address details (optional for walk-in, can use store address)
+        addressLine,
+        house,
+        street,
+        city,
+        state,
+        pincode,
+        landmark,
+        fullName,
+        phone,
+        altPhone,
+        latitude,
+        longitude,
+        deliveryType = 'pickup', // 'pickup' or 'delivery'
+        // Order details
+        services,
+        notes,
+        isExpress,
+        paymentMode = 'cash'
+      } = req.body;
+
+      const storeId = req.store.id;
+
+      // Validate required fields
+      if (!customerPhone || !customerName) {
+        await transaction.rollback();
         return res.status(400).json({
           success: false,
-          message: 'Invalid date format. Please use ISO 8601 format (e.g., 2023-01-01)'
+          message: 'Customer name and phone number are required'
+        });
+      }
+
+      if (!services || !Array.isArray(services) || services.length === 0) {
+        await transaction.rollback();
+        return res.status(400).json({
+          success: false,
+          message: 'At least one service is required'
+        });
+      }
+
+      // Find or create user
+      let user = await User.findOne({
+        where: { phone_number: customerPhone },
+        transaction
+      });
+
+      if (!user) {
+        user = await User.create({
+          phone_number: customerPhone,
+          name: customerName,
+          email: customerEmail || null,
+          created_at: new Date(),
+          updated_at: new Date()
+        }, { transaction });
+      } else {
+        // Update user details if provided
+        const updateData = {};
+        if (customerName && customerName !== user.name) {
+          updateData.name = customerName;
+        }
+        if (customerEmail && customerEmail !== user.email) {
+          updateData.email = customerEmail;
+        }
+        if (Object.keys(updateData).length > 0) {
+          updateData.updated_at = new Date();
+          await user.update(updateData, { transaction });
+        }
+      }
+
+      // Get store details for address
+      const store = await Store.findByPk(storeId, { transaction });
+      if (!store) {
+        await transaction.rollback();
+        return res.status(404).json({
+          success: false,
+          message: 'Store not found'
         });
       }
       
-      if (startDate > endDate) {
-        return res.status(400).json({
-          success: false,
-          message: 'Start date cannot be after end date'
-        });
+      let address;
+      
+      // If delivery, require address. If pickup, use store address as fallback
+      if (deliveryType === 'delivery') {
+        if (!addressLine || !city || !state || !pincode || !house || !street) {
+          await transaction.rollback();
+          return res.status(400).json({
+            success: false,
+            message: 'Delivery address is required for delivery orders'
+          });
+        }
+        
+        address = await Address.create({
+          user_id: user.id,
+          full_name: fullName || customerName,
+          phone: phone || customerPhone,
+          alt_phone: altPhone || null,
+          label: 'Delivery',
+          address_line: addressLine,
+          house: house,
+          street: street,
+          city: city,
+          state: state,
+          pincode: pincode,
+          landmark: landmark || null,
+          latitude: latitude ? parseFloat(latitude) : null,
+          longitude: longitude ? parseFloat(longitude) : null,
+          is_default: false,
+          created_at: new Date()
+        }, { transaction });
+      } else {
+        // For pickup, create a minimal address using store address
+        address = await Address.create({
+          user_id: user.id,
+          full_name: customerName,
+          phone: customerPhone,
+          alt_phone: null,
+          label: 'Store Pickup',
+          address_line: store.address,
+          house: 'Store',
+          street: store.address,
+          city: 'Store Location',
+          state: 'Store Location',
+          pincode: '000000',
+          landmark: store.name,
+          latitude: store.latitude,
+          longitude: store.longitude,
+          is_default: false,
+          created_at: new Date()
+        }, { transaction });
       }
-    } 
-    // Otherwise, use the period parameter
-    else if (period) {
-      const validPeriods = ['30', '90', '365'];
-      if (!validPeriods.includes(period.toString())) {
-        return res.status(400).json({
-          success: false,
-          message: 'Invalid period. Allowed values: 30, 90, or 365 days'
-        });
+
+      // Normalize and validate services
+      const normalizedServices = services.map((service) => {
+        const serviceId = Number(service.serviceId || service.id);
+        const quantity = Number(service.quantity || 1);
+        return { serviceId, quantity: quantity > 0 ? quantity : 1 };
+      });
+
+      // Validate services exist
+      for (const { serviceId } of normalizedServices) {
+        const serviceExists = await Service.findByPk(serviceId, { transaction });
+        if (!serviceExists) {
+          await transaction.rollback();
+          return res.status(404).json({
+            success: false,
+            message: `Service with id ${serviceId} not found`
+          });
+        }
       }
-      const days = parseInt(period, 10);
-      startDate = new Date();
-      startDate.setDate(startDate.getDate() - days);
-    } 
-    
-    // If no parameters are provided, default to last 30 days
-    else {
-      startDate = new Date();
-      startDate.setDate(startDate.getDate() - 30);
+
+      // For walk-in customers: pickup is immediate
+      const now = new Date();
+      
+      const order = await Order.create({
+        user_id: user.id,
+        store_id: storeId,
+        address_id: address.id,
+        service_id: normalizedServices[0]?.serviceId || null, // For backward compatibility
+        pickup_scheduled_at: now, // Already at store
+        pickup_slot_end: now, // Already at store
+        picked_up_at: now, // Already dropped off
+        order_status: 'picked_up', // Start as picked_up since they're at store
+        payment_mode: paymentMode,
+        notes: notes || null,
+        is_express: isExpress === true || isExpress === 'true' || isExpress === 1,
+        is_walk_in: true // Mark as walk-in order
+      }, { transaction });
+
+      // Create order items
+      for (const { serviceId, quantity } of normalizedServices) {
+        await OrderItem.create({
+          order_id: order.id,
+          service_id: serviceId,
+          quantity
+        }, { transaction });
+      }
+
+      await transaction.commit();
+
+      // Fetch the created order with all relationships
+      const createdOrder = await Order.findByPk(order.id, {
+        include: [
+          {
+            model: User,
+            as: 'user',
+            attributes: ['id', 'name', 'phone_number', 'email']
+          },
+          {
+            model: Address,
+            as: 'delivery_address',
+            attributes: [
+              'id',
+              'label',
+              'full_name',
+              'phone',
+              'address_line',
+              'house',
+              'street',
+              'city',
+              'state',
+              'pincode',
+              'landmark'
+            ]
+          },
+          {
+            model: OrderItem,
+            as: 'items',
+            attributes: ['id', 'quantity', 'total_amount'],
+            include: [
+              {
+                model: Service,
+                as: 'service',
+                attributes: ['id', 'name', 'description', 'price']
+              }
+            ]
+          }
+        ]
+      });
+
+      // Create notification for user
+      try {
+        await createNotification({
+          userId: user.id,
+          storeId: storeId,
+          title: 'Order Created',
+          message: `Order #${order.id} has been created at the store.`,
+          type: 'order_created'
+        });
+      } catch (notifError) {
+        console.error('Error creating order notification:', notifError);
+        // Don't fail the order creation if notification fails
+      }
+
+      res.status(201).json({
+        success: true,
+        message: 'Order created successfully',
+        data: createdOrder
+      });
+
+    } catch (error) {
+      await transaction.rollback();
+      console.error('Error creating order:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to create order',
+        error: error.message
+      });
     }
-
-    // Format dates for query
-    const formatDate = (date) => date.toISOString().split('T')[0] + ' 00:00:00';
-    const formattedStartDate = formatDate(startDate);
-    const formattedEndDate = formatDate(endDate);
-
-   const transactions = await sequelize.query(
-  `
-    SELECT 
-      o.id AS "orderId",
-      o.delivered_at AS "deliveredDate",
-      u.name AS "userName",
-      COALESCE(SUM(oi.total_amount), 0) AS "totalAmount",
-      o.payment_mode AS "paymentMethod"
-    FROM orders o
-    INNER JOIN users u ON u.id = o.user_id
-    LEFT JOIN order_items oi ON oi.order_id = o.id
-    WHERE o.store_id = :storeId
-      AND o.order_status = 'delivered'
-      AND o.delivered_at IS NOT NULL
-      AND o.delivered_at >= :startDate
-      AND o.delivered_at <= :endDate
-    GROUP BY o.id, o.delivered_at, u.name, o.payment_mode
-    ORDER BY o.delivered_at DESC
-  `,
-  {
-    replacements: {
-      storeId: req.store.id,
-      startDate: formattedStartDate,
-      endDate: formattedEndDate
-    },
-    type: QueryTypes.SELECT
-  }
-);
-
-    // Calculate summary statistics
-    const totalRevenue = transactions.reduce((sum, transaction) => {
-      return sum + parseFloat(transaction.totalAmount || 0);
-    }, 0);
-
-    const totalTransactions = transactions.length;
-
-    // Group by payment method
-    const paymentMethods = transactions.reduce((acc, transaction) => {
-      const method = transaction.paymentMethod || 'unknown';
-      if (!acc[method]) {
-        acc[method] = {
-          count: 0,
-          amount: 0
-        };
+  },
+  getTransactionHistoryByDateRange: async (req, res) => {
+    try {
+      const { period, startDate: startDateParam, endDate: endDateParam } = req.query;
+      
+      let startDate, endDate = new Date();
+      
+      // If both startDate and endDate are provided, use them
+      if (startDateParam && endDateParam) {
+        startDate = new Date(startDateParam);
+        endDate = new Date(endDateParam);
+        
+        // Validate dates
+        if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid date format. Please use ISO 8601 format (e.g., 2023-01-01)'
+          });
+        }
+        
+        if (startDate > endDate) {
+          return res.status(400).json({
+            success: false,
+            message: 'Start date cannot be after end date'
+          });
+        }
+      } 
+      // Otherwise, use the period parameter
+      else if (period) {
+        const validPeriods = ['30', '90', '365'];
+        if (!validPeriods.includes(period.toString())) {
+          return res.status(400).json({
+            success: false,
+            message: 'Invalid period. Allowed values: 30, 90, or 365 days'
+          });
+        }
+        const days = parseInt(period, 10);
+        startDate = new Date();
+        startDate.setDate(startDate.getDate() - days);
+      } 
+      
+      // If no parameters are provided, default to last 30 days
+      else {
+        startDate = new Date();
+        startDate.setDate(startDate.getDate() - 30);
       }
-      acc[method].count += 1;
-      acc[method].amount += parseFloat(transaction.totalAmount || 0);
-      return acc;
-    }, {});
 
-    res.json({
-      success: true,
-      data: {
-        dateRange: {
-          start: startDate.toISOString().split('T')[0],
-          end: endDate.toISOString().split('T')[0]
-        },
-        summary: {
-          totalTransactions,
-          totalRevenue: parseFloat(totalRevenue.toFixed(2)),
-          averageOrderValue: totalTransactions > 0 
-            ? parseFloat((totalRevenue / totalTransactions).toFixed(2))
-            : 0
-        },
-        paymentMethods: Object.entries(paymentMethods).map(([method, data]) => ({
-          method,
-          count: data.count,
-          amount: parseFloat(data.amount.toFixed(2)),
-          percentage: totalRevenue > 0 
-            ? parseFloat(((data.amount / totalRevenue) * 100).toFixed(2))
-            : 0
-        })),
-        transactions: transactions.map(transaction => ({
-          orderId: transaction.orderId,
-          deliveredDate: transaction.deliveredDate,
-          userName: transaction.userName,
-          totalAmount: parseFloat(transaction.totalAmount || 0),
-          paymentMethod: transaction.paymentMethod,
-          paymentStatus: transaction.paymentStatus
-        }))
-      }
-    });
-  } catch (error) {
-    console.error('Get transaction history error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to fetch transaction history',
-      error: error.message
-    });
+      // Format dates for query
+      const formatDate = (date) => date.toISOString().split('T')[0] + ' 00:00:00';
+      const formattedStartDate = formatDate(startDate);
+      const formattedEndDate = formatDate(endDate);
+
+     const transactions = await sequelize.query(
+    `
+      SELECT 
+        o.id AS "orderId",
+        o.delivered_at AS "deliveredDate",
+        u.name AS "userName",
+        COALESCE(SUM(oi.total_amount), 0) AS "totalAmount",
+        o.payment_mode AS "paymentMethod"
+      FROM orders o
+      INNER JOIN users u ON u.id = o.user_id
+      LEFT JOIN order_items oi ON oi.order_id = o.id
+      WHERE o.store_id = :storeId
+        AND o.order_status = 'delivered'
+        AND o.delivered_at IS NOT NULL
+        AND o.delivered_at >= :startDate
+        AND o.delivered_at <= :endDate
+      GROUP BY o.id, o.delivered_at, u.name, o.payment_mode
+      ORDER BY o.delivered_at DESC
+    `,
+    {
+      replacements: {
+        storeId: req.store.id,
+        startDate: formattedStartDate,
+        endDate: formattedEndDate
+      },
+      type: QueryTypes.SELECT
+    }
+  );
+
+      // Calculate summary statistics
+      const totalRevenue = transactions.reduce((sum, transaction) => {
+        return sum + parseFloat(transaction.totalAmount || 0);
+      }, 0);
+
+      const totalTransactions = transactions.length;
+
+      // Group by payment method
+      const paymentMethods = transactions.reduce((acc, transaction) => {
+        const method = transaction.paymentMethod || 'unknown';
+        if (!acc[method]) {
+          acc[method] = {
+            count: 0,
+            amount: 0
+          };
+        }
+        acc[method].count += 1;
+        acc[method].amount += parseFloat(transaction.totalAmount || 0);
+        return acc;
+      }, {});
+
+      res.json({
+        success: true,
+        data: {
+          dateRange: {
+            start: startDate.toISOString().split('T')[0],
+            end: endDate.toISOString().split('T')[0]
+          },
+          summary: {
+            totalTransactions,
+            totalRevenue: parseFloat(totalRevenue.toFixed(2)),
+            averageOrderValue: totalTransactions > 0 
+              ? parseFloat((totalRevenue / totalTransactions).toFixed(2))
+              : 0
+          },
+          paymentMethods: Object.entries(paymentMethods).map(([method, data]) => ({
+            method,
+            count: data.count,
+            amount: parseFloat(data.amount.toFixed(2)),
+            percentage: totalRevenue > 0 
+              ? parseFloat(((data.amount / totalRevenue) * 100).toFixed(2))
+              : 0
+          })),
+          transactions: transactions.map(transaction => ({
+            orderId: transaction.orderId,
+            deliveredDate: transaction.deliveredDate,
+            userName: transaction.userName,
+            totalAmount: parseFloat(transaction.totalAmount || 0),
+            paymentMethod: transaction.paymentMethod,
+            paymentStatus: transaction.paymentStatus
+          }))
+        }
+      });
+    } catch (error) {
+      console.error('Get transaction history error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to fetch transaction history',
+        error: error.message
+      });
+    }
   }
-}
 };
 
 module.exports = storeController;

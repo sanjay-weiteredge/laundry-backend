@@ -14,6 +14,7 @@ router.post('/stores/login', storeController.storeLogin);
 router.get('/stores/profile', storeAuth, storeController.getStoreProfile);
 router.patch('/stores/status', storeAuth, storeController.updateStoreStatus);
 router.get('/stores/orders', storeAuth, storeController.getStoreOrders);
+router.post('/stores/orders', storeAuth, storeController.createOrder);
 router.put('/stores/orders/:orderId/items', storeAuth, storeController.updateOrderItems);
 
 
