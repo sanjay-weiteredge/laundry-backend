@@ -1,6 +1,6 @@
 const { User, Order, OrderItem, Address, Notification, sequelize } = require('../models');
 const AuthService = require('../services/auth.service');
-const { Op } = require('sequelize');
+const { Op, QueryTypes } = require('sequelize');
 const twilio = require('twilio');
 const AccountSid = process.env.TWILIO_ACCOUNT_SID;
 const AuthToken = process.env.TWILIO_AUTH_TOKEN;
@@ -401,6 +401,87 @@ const reportUser = async (req, res) => {
   }
 };
 
+const getNearbyStores = async (req, res) => {
+  console.log("nearby store", req.query)
+  try {
+    const { latitude, longitude, radius_km } = req.query;
+
+    const lat = parseFloat(latitude);
+    const lng = parseFloat(longitude);
+    const radius = radius_km ? parseFloat(radius_km) : 3;
+
+    if (Number.isNaN(lat) || Number.isNaN(lng)) {
+      return res.status(400).json({
+        success: false,
+        message: 'latitude and longitude query parameters are required and must be valid numbers'
+      });
+    }
+
+    const effectiveRadius = Number.isNaN(radius) ? 3 : radius;
+
+    const stores = await sequelize.query(
+      `
+        SELECT *
+        FROM (
+          SELECT 
+            id,
+            name,
+            email,
+            phone,
+            address,
+            latitude,
+            longitude,
+            is_active,
+            is_admin_locked,
+            (
+              6371 * acos(
+                cos(radians(:lat)) * cos(radians(latitude)) *
+                cos(radians(longitude) - radians(:lng)) +
+                sin(radians(:lat)) * sin(radians(latitude))
+              )
+            ) AS distance
+          FROM stores
+          WHERE 
+            is_active = true
+            AND is_admin_locked = false
+            AND latitude IS NOT NULL
+            AND longitude IS NOT NULL
+        ) AS s
+        WHERE s.distance <= :radius
+        ORDER BY s.distance ASC
+      `,
+      {
+        replacements: { lat, lng, radius: effectiveRadius },
+        type: QueryTypes.SELECT
+      }
+    );
+
+    const formattedStores = stores.map((store) => ({
+      ...store,
+      latitude: store.latitude !== null ? parseFloat(store.latitude) : null,
+      longitude: store.longitude !== null ? parseFloat(store.longitude) : null,
+      distance: store.distance !== null ? parseFloat(store.distance) : null
+    }));
+
+    return res.json({
+      success: true,
+      data: formattedStores,
+      meta: {
+        radiusKm: effectiveRadius,
+        center: { latitude: lat, longitude: lng },
+        count: formattedStores.length
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching nearby stores:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch nearby stores',
+      error: error.message
+    });
+  }
+};
+
 const getUserNotifications = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -538,6 +619,7 @@ module.exports = {
   listUsers,
   deleteUser,
   reportUser,
+  getNearbyStores,
   getUserNotifications,
   markNotificationAsRead,
   markAllNotificationsAsRead

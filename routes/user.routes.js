@@ -8,6 +8,7 @@ const {
   listUsers,
   deleteUser,
   reportUser,
+  getNearbyStores,
   getUserNotifications,
   markNotificationAsRead,
   markAllNotificationsAsRead
@@ -27,6 +28,7 @@ router.post('/verify-otp', verifyOTP);
 
 
 router.use(skipAuth);
+router.get('/nearby-stores', getNearbyStores);
 router.get('/posters', getActivePosters);
 router.get('/profile', getUserProfile);
 router.put('/update-profile', uploadImage, updateProfile);
