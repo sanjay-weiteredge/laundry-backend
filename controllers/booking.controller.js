@@ -1,6 +1,6 @@
 const { Op, Sequelize } = require('sequelize');
 const { sequelize } = require('../models');
-const { Order, Service, Store, User, Address, ServicePricing, OrderItem } = require('../models');
+const { Order, Service, Store, User, Address, ServicePricing, OrderItem, Setting } = require('../models');
 const { getDistance } = require('geolib');
 const { createNotification } = require('../utils/notificationHelper');
 
@@ -168,6 +168,12 @@ const bookingController = {
       }
 
       
+      const radiusSetting = await Setting.findByPk('nearby_radius_km', { transaction });
+     
+      const radius = (radiusSetting && radiusSetting.value && !Number.isNaN(parseFloat(radiusSetting.value))) 
+        ? parseFloat(radiusSetting.value) 
+        : 3; 
+    
       const stores = await Store.findAll({
         where: {
           is_active: true,
@@ -180,7 +186,7 @@ const bookingController = {
                 sin(radians(${userAddress.latitude})) *
                 sin(radians(latitude))
               )
-            ) <= 3`)
+            ) <= ${radius}`)
           ]
         },
         attributes: [

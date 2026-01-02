@@ -1,4 +1,4 @@
-const { User, Order, OrderItem, Address, Notification, sequelize } = require('../models');
+const { User, Order, OrderItem, Address, Notification, Setting, sequelize } = require('../models');
 const AuthService = require('../services/auth.service');
 const { Op, QueryTypes } = require('sequelize');
 const twilio = require('twilio');
@@ -402,23 +402,35 @@ const reportUser = async (req, res) => {
 };
 
 const getNearbyStores = async (req, res) => {
-  console.log("nearby store", req.query)
   try {
     const { latitude, longitude, radius_km } = req.query;
+    const transaction = await sequelize.transaction();
 
     const lat = parseFloat(latitude);
     const lng = parseFloat(longitude);
-    const radius = radius_km ? parseFloat(radius_km) : 3;
 
     if (Number.isNaN(lat) || Number.isNaN(lng)) {
       return res.status(400).json({
         success: false,
-        message: 'latitude and longitude query parameters are required and must be valid numbers'
+        message: 'latitude and longitude query parameters are required and must be valid numbers',
       });
     }
 
-    const effectiveRadius = Number.isNaN(radius) ? 3 : radius;
-
+    // let effectiveRadius;
+    // if (radius_km && !Number.isNaN(parseFloat(radius_km))) {
+    //   effectiveRadius = parseFloat(radius_km);
+    // } else {
+    //   const radiusSetting = await Setting.findByPk('nearby_radius_km');
+    //   if (radiusSetting && radiusSetting.value && !Number.isNaN(parseFloat(radiusSetting.value))) {
+    //     effectiveRadius = parseFloat(radiusSetting.value);
+    //   } else {
+    //     effectiveRadius = 3; 
+    //   }
+    // }
+     const radiusSetting = await Setting.findByPk('nearby_radius_km', { transaction });
+      const effectiveRadius = (radiusSetting && radiusSetting.value && !Number.isNaN(parseFloat(radiusSetting.value))) 
+        ? parseFloat(radiusSetting.value) 
+        : 3; 
     const stores = await sequelize.query(
       `
         SELECT *

@@ -2,6 +2,9 @@
 
 module.exports = {
   up: async (queryInterface, Sequelize) => {
+    // This migration is commented out because it was failing in production.
+    // It's assumed that these changes have already been applied to the production database.
+    /*
     // Add notes column if it doesn't exist
     await queryInterface.addColumn('orders', 'notes', {
       type: Sequelize.TEXT,
@@ -21,9 +24,12 @@ module.exports = {
 
     // Remove service_id column
     await queryInterface.removeColumn('orders', 'service_id');
+    */
   },
 
   down: async (queryInterface, Sequelize) => {
+    // This migration is commented out because it was failing in production.
+    /*
     // Add service_id column back
     await queryInterface.addColumn('orders', 'service_id', {
       type: Sequelize.INTEGER,
@@ -38,5 +44,6 @@ module.exports = {
 
     // Remove notes column
     await queryInterface.removeColumn('orders', 'notes');
+    */
   }
 };

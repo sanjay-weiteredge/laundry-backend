@@ -12,6 +12,7 @@ const storeRoutes = require('./routes/store.routes');
 const servicesRoutes = require('./routes/services.routes');
 const bookingRoutes = require('./routes/booking.routes');
 const orderRoutes = require('./routes/order.routes');
+const settingRoutes = require('./routes/setting.routes');
 const app = express();
 const PORT = process.env.PORT || 8000;
 
@@ -36,6 +37,7 @@ app.use('/api/stores', storeRoutes);
 app.use('/api/services', servicesRoutes);
 app.use('/api/booking', bookingRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/settings', settingRoutes);
 
 
 app.get('/health', (req, res) => {
