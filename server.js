@@ -97,10 +97,11 @@ async function startServer() {
     await sequelize.authenticate();
     console.log('✅ Database connection established');
 
-    // ❗ NEVER sync with alter in production
-    if (process.env.NODE_ENV !== 'production') {
+    // ⚠️ TEMPORARY / DEV ONLY
+    if (process.env.DB_SYNC === 'true') {
+      console.warn('⚠️ Running sequelize.sync({ alter: true })');
       await sequelize.sync({ alter: true });
-      console.log('🛠 Database synchronized (dev mode)');
+      console.warn('⚠️ DB sync completed');
     }
 
     app.listen(PORT, () => {
@@ -112,6 +113,7 @@ async function startServer() {
     process.exit(1);
   }
 }
+
 
 startServer();
 
