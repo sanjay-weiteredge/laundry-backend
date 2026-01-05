@@ -624,6 +624,36 @@ const markAllNotificationsAsRead = async (req, res) => {
   }
 };
 
+const updateDeviceToken = async (req, res) => {
+  try {
+    const { deviceToken } = req.body;
+    const userId = req.user.id;
+
+    if (!deviceToken) {
+      return res.status(400).json({
+        success: false,
+        message: 'deviceToken is required',
+      });
+    }
+
+    await User.update({ deviceToken }, {
+      where: { id: userId },
+    });
+
+    res.json({
+      success: true,
+      message: 'Device token updated successfully',
+    });
+  } catch (error) {
+    console.error('Error updating device token:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update device token',
+      error: error.message,
+    });
+  }
+};
+
 module.exports = {
   sendOTP,
   verifyOTP,
@@ -635,5 +665,7 @@ module.exports = {
   getNearbyStores,
   getUserNotifications,
   markNotificationAsRead,
-  markAllNotificationsAsRead
+  markAllNotificationsAsRead,
+  updateDeviceToken
+  
 };

@@ -11,7 +11,8 @@ const {
   getNearbyStores,
   getUserNotifications,
   markNotificationAsRead,
-  markAllNotificationsAsRead
+  markAllNotificationsAsRead,
+  updateDeviceToken
 } = require('../controllers/user.controller');
 const { getActivePosters } = require('../controllers/poster.controller');
 const { skipAuth } = require('../middleware/auth.middleware');
@@ -35,5 +36,5 @@ router.put('/update-profile', uploadImage, updateProfile);
 router.get('/notifications', getUserNotifications);
 router.put('/notifications/:id/read', markNotificationAsRead);
 router.put('/notifications/read-all', markAllNotificationsAsRead);
-
+router.put('/device-token', updateDeviceToken);
 module.exports = router;

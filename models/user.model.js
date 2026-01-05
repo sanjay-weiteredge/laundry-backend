@@ -24,6 +24,10 @@ module.exports = (sequelize, DataTypes) => {
         notEmpty: true
       }
     },
+    deviceToken: {
+      type: DataTypes.STRING,
+      allowNull: true
+    },
     name: {
       type: DataTypes.STRING(100)
     },
