@@ -14,11 +14,10 @@
     "dialect": "postgres"
   },
   "production": {
-  "username": "postgres",
-  "password": "Laundry@123",
-  "database": "Laundry",
-  "host": "127.0.0.1",
-  "dialect": "postgres"
-}
-
+    "username": "postgres",
+    "password": "LaundryGuyz@123",
+    "database": "LaundryGuyz",
+    "host": "13.51.13.251",
+    "dialect": "postgres"
+  }
 } 

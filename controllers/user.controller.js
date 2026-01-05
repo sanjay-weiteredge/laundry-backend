@@ -431,6 +431,7 @@ const getNearbyStores = async (req, res) => {
       const effectiveRadius = (radiusSetting && radiusSetting.value && !Number.isNaN(parseFloat(radiusSetting.value))) 
         ? parseFloat(radiusSetting.value) 
         : 3; 
+
     const stores = await sequelize.query(
       `
         SELECT *
