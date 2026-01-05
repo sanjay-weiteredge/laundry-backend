@@ -114,7 +114,8 @@ const skipAuth = async (req, res, next) => {
     '/admin/signup',
     '/api/stores/login',
     '/send-otp',
-    '/verify-otp'
+    '/verify-otp',
+    '/nearby-stores'
   ];
 
  
