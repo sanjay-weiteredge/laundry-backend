@@ -13,6 +13,7 @@ const servicesRoutes = require('./routes/services.routes');
 const bookingRoutes = require('./routes/booking.routes');
 const orderRoutes = require('./routes/order.routes');
 const settingRoutes = require('./routes/setting.routes');
+const notificationRoutes = require('./routes/notification.route');
 
 const app = express();
 const PORT = process.env.PORT || 8000;
@@ -39,6 +40,7 @@ app.use('/api/services', servicesRoutes);
 app.use('/api/booking', bookingRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/settings', settingRoutes);
+app.use('/api/notifications', notificationRoutes);
 
 /* -------------------- Health Check -------------------- */
 

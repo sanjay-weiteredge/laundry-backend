@@ -625,6 +625,7 @@ const markAllNotificationsAsRead = async (req, res) => {
 };
 
 const updateDeviceToken = async (req, res) => {
+  console.log("token aa rha hai ", req.body);
   try {
     const { deviceToken } = req.body;
     const userId = req.user.id;
